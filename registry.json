@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "market-watch",
+      "name": "Market Watch",
+      "version": "1.0.0",
+      "official": false,
+      "author": "chengongliang",
+      "description": "Real-time market data for cryptocurrencies, metals, and US stocks",
+      "repository": "https://github.com/noctalia-dev/noctalia-plugins",
+      "minNoctaliaVersion": "4.6.6",
+      "license": "MIT",
+      "tags": [
+        "Bar",
+        "Panel",
+        "Indicator",
+        "Utility"
+      ],
+      "lastUpdated": "2026-07-06T08:53:47+08:00"
+    }
+  ]
+}

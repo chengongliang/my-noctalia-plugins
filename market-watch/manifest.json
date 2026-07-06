@@ -1,0 +1,34 @@
+{
+  "id": "market-watch",
+  "name": "Market Watch",
+  "version": "1.0.0",
+  "minNoctaliaVersion": "4.6.6",
+  "author": "chengongliang",
+  "license": "MIT",
+  "repository": "https://github.com/noctalia-dev/noctalia-plugins",
+  "description": "Real-time market data for cryptocurrencies, metals, and US stocks",
+  "tags": ["Bar", "Panel", "Indicator", "Utility"],
+  "entryPoints": {
+    "main": "Main.qml",
+    "barWidget": "BarWidget.qml",
+    "panel": "Panel.qml",
+    "settings": "Settings.qml"
+  },
+  "dependencies": {
+    "plugins": []
+  },
+  "metadata": {
+    "defaultSettings": {
+      "watchList": ["btc", "eth", "bnb", "sol", "xrp"],
+      "barCoin": "btc",
+      "displayMode": "text",
+      "panelPosition": "center",
+      "redRises": false,
+      "refreshInterval": 5,
+      "dataSource": "huobi",
+      "marketType": "spot",
+      "proxyUrl": "",
+      "language": "en"
+    }
+  }
+}
