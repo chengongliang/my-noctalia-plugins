@@ -18,6 +18,24 @@
         "Utility"
       ],
       "lastUpdated": "2026-07-06T08:53:47+08:00"
+    },
+    {
+      "id": "hermes-agent",
+      "name": "Hermes Agent",
+      "version": "1.1.0",
+      "official": false,
+      "author": "nomadx, FelipeMayerDev",
+      "description": "Native Noctalia status and side-panel interface for Hermes Agent. Supports a client-only mode to drive a Hermes bridge running on a remote server over SSH.",
+      "repository": "https://github.com/noctalia-dev/noctalia-plugins",
+      "minNoctaliaVersion": "4.4.1",
+      "license": "MIT",
+      "tags": [
+        "Bar",
+        "Panel",
+        "Launcher",
+        "AI"
+      ],
+      "lastUpdated": "2026-07-06T10:58:26+08:00"
     }
   ]
 }
