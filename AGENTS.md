@@ -1,5 +1,7 @@
 # AI-Assisted Development Guidelines
 
+These guidelines are adapted from the official Noctalia legacy plugins repository: https://github.com/noctalia-dev/legacy-v4-plugins
+
 Guidelines for AI tools contributing to the Noctalia Plugins repository. **Study the official plugins before writing code** — especially `hello-world` (minimal reference) and `timer` (complex example with shared state). Official plugins have `"official": true` in their manifest.
 
 ## Plugin API
