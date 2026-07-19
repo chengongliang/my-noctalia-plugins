@@ -4,7 +4,7 @@
     {
       "id": "market-watch",
       "name": "Market Watch",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "official": false,
       "author": "chengongliang",
       "description": "Real-time market data for cryptocurrencies, metals, and US stocks",
@@ -17,7 +17,7 @@
         "Indicator",
         "Utility"
       ],
-      "lastUpdated": "2026-07-06T08:53:47+08:00"
+      "lastUpdated": "2026-07-19T10:27:33+08:00"
     },
     {
       "id": "hermes-agent",

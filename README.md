@@ -23,7 +23,7 @@ Then restart Noctalia Shell or reload the configuration.
 ## Development
 
 - Each plugin has its own `manifest.json` and README.
-- `registry.json` is generated metadata and should not be edited manually.
+- `registry.json` is the plugin discovery index. When a plugin version changes, update its matching `version` and `lastUpdated` fields in the same commit.
 - User-facing strings should live in each plugin's `i18n/` files.
 - Plugin settings defaults should be declared in `manifest.json`.
 

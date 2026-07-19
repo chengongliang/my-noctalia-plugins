@@ -267,6 +267,7 @@ NIconButtonHot {
 **Field rules:**
 - `id` must match the folder name
 - `version` starts at `1.0.0`; bump appropriately on updates
+- Whenever a plugin version changes, update the matching `registry.json` entry in the same change. Keep at least `version` and `lastUpdated` synchronized with the plugin manifest.
 - `minNoctaliaVersion` — verify the features you use exist in that version
 - `repository` — always `https://github.com/noctalia-dev/noctalia-plugins` for PRs to this repo
 - `tags` — use only tags from [README.md](./README.md#tags); include compositor tags if compositor-specific
@@ -350,7 +351,7 @@ These are the most frequent issues in AI-generated plugin PRs:
 - [ ] Plugin tested with Noctalia Shell (`qs -c noctalia-shell`)
 - [ ] `manifest.json` is valid with all required fields
 - [ ] `id` matches folder name
-- [ ] `registry.json` is **not** included in the PR (auto-generated)
+- [ ] If the plugin version changed, the matching `registry.json` entry has the same version and an updated `lastUpdated` timestamp
 - [ ] All user-facing strings use `pluginApi?.tr()` with translations in `i18n/`
 - [ ] Settings use the `cfg → defaults → hardcoded` fallback chain
 - [ ] `Settings.qml` exposes a `saveSettings()` function
