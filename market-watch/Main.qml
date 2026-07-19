@@ -196,7 +196,7 @@ Item {
     "egld", "xtz", "btt", "zec", "waves", "dash", "zil", "neo", "chz", "bat",
     "enj", "lrc", "1inch", "sushi", "yfi", "bal", "ren", "omg", "uma", "kava",
     "xau", "xag", "aapl", "msft", "nvda", "tsla", "amzn", "googl", "meta", "nflx",
-    "coin", "mstr", "qqq", "spy"
+    "coin", "mstr", "qqq", "spy", "zhipu", "minimax"
   ]
 
   readonly property var coinNames: ({
@@ -273,7 +273,9 @@ Item {
     "coin": "Coinbase",
     "mstr": "MicroStrategy",
     "qqq": "Nasdaq 100 ETF",
-    "spy": "S&P 500 ETF"
+    "spy": "S&P 500 ETF",
+    "zhipu": "Zhipu AI",
+    "minimax": "MiniMax"
   })
 
   // CoinGecko 币种 ID 映射
@@ -290,7 +292,7 @@ Item {
     "avax": "avalanche-2"
   })
 
-  // 备用 Logo URLs (CoinGecko CDN)
+  // 已知资产的备用 Logo URLs
   readonly property var fallbackLogoUrls: ({
     "btc": "https://assets.coingecko.com/coins/images/1/large/bitcoin.png",
     "eth": "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
@@ -301,7 +303,9 @@ Item {
     "dot": "https://assets.coingecko.com/coins/images/12171/large/polkadot.png",
     "doge": "https://assets.coingecko.com/coins/images/5/large/dogecoin.png",
     "matic": "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png",
-    "avax": "https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png"
+    "avax": "https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png",
+    "zhipu": "https://www.zhipuai.cn/favicon.png",
+    "minimax": "https://filecdn.minimax.chat/public/58eca777-e31f-448a-9823-e2220e49b426.png"
   })
 
   // 币种图标映射（Emoji 作为备用）
@@ -329,7 +333,9 @@ Item {
     "coin": "C",
     "mstr": "M",
     "qqq": "Q",
-    "spy": "S"
+    "spy": "S",
+    "zhipu": "Z",
+    "minimax": "M"
   })
 
   // 数据源适配器

@@ -2,7 +2,7 @@
 
 A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Version](https://img.shields.io/badge/version-1.0.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -13,7 +13,7 @@ A real-time market monitoring plugin for Noctalia Shell, displaying live crypto 
 - **Market Panel**: Detailed view of multiple assets with 24h high/low
 - **Display Modes**: Text mode (with asset symbol) or compact mode (price only)
 - **Color Schemes**: Red-rises-green-falls or green-rises-red-falls
-- **Auto Logo Management**: Downloads and caches coin logos from CoinGecko CDN
+- **Auto Logo Management**: Downloads and caches asset logos from CoinGecko and official company sources
 - **Language Switcher**: Switch the plugin interface between English and Simplified Chinese
 - **Proxy Support**: Optional HTTP/SOCKS5 proxy configuration
 - **Config Import/Export**: Export and restore your settings with a JSON file
@@ -71,7 +71,7 @@ Default settings in `manifest.json`:
 
 ## Supported Assets
 
-Pre-configured crypto assets with logos:
+Pre-configured assets with logos:
 - **BTC** (Bitcoin)
 - **ETH** (Ethereum)
 - **BNB** (Binance Coin)
@@ -82,6 +82,8 @@ Pre-configured crypto assets with logos:
 - **DOGE** (Dogecoin)
 - **MATIC** (Polygon)
 - **AVAX** (Avalanche)
+- **ZHIPU** (Zhipu AI)
+- **MINIMAX** (MiniMax)
 
 You can add more assets by searching in the settings panel. In perpetual mode, the search list is loaded from the selected exchange when possible. You can also type symbols directly, for example `xau`, `xag`, `aapl`, `msft`, or `nvda`; availability depends on the selected exchange.
 
@@ -186,4 +188,4 @@ chengongliang
 
 ## Version
 
-1.0.0 - Requires Noctalia Shell >= 4.6.6
+1.0.1 - Adds logo support for ZHIPU and MINIMAX contracts; requires Noctalia Shell >= 4.6.6
