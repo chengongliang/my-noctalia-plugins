@@ -18,6 +18,7 @@
     "settings": "设置"
   },
   "panel": {
+    "catalogError": "资产目录暂时不可用",
     "change": "涨跌幅",
     "close": "关闭",
     "coin": "资产",
@@ -71,6 +72,7 @@
     "searchPlaceholder": "输入资产代码搜索（例如：btc, xau, aapl）",
     "searchResults": "搜索结果",
     "seconds": "秒",
+    "unavailable": "当前数据源不可用",
     "watchList": "自选资产列表",
     "watchListTip": "点击资产名称添加或移除，使用箭头调整顺序"
   }

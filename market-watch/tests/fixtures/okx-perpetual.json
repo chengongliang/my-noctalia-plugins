@@ -1,0 +1,19 @@
+{
+  "code": "0",
+  "data": [
+    {
+      "instId": "BTC-USDT-SWAP",
+      "baseCcy": "BTC",
+      "quoteCcy": "USDT",
+      "settleCcy": "USDT",
+      "state": "live"
+    },
+    {
+      "instId": "ETH-USDC-SWAP",
+      "baseCcy": "ETH",
+      "quoteCcy": "USDC",
+      "settleCcy": "USDC",
+      "state": "live"
+    }
+  ]
+}

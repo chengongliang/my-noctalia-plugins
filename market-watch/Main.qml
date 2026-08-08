@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import "MarketProviders.js" as MarketProviders
 
 Item {
   id: root
@@ -11,6 +12,7 @@ Item {
   // 读取配置
   readonly property var cfg: pluginApi?.pluginSettings || ({})
   readonly property var defaults: pluginApi?.manifest?.metadata?.defaultSettings || ({})
+  readonly property int watchListSchemaVersion: 2
 
   property var watchList: cfg.watchList ?? defaults.watchList ?? ["btc", "eth", "bnb", "sol", "xrp"]
   property string barCoin: cfg.barCoin ?? defaults.barCoin ?? "btc"
@@ -42,6 +44,7 @@ Item {
         "spot": "Spot"
       },
       "panel": {
+        "catalogError": "Instrument catalog is unavailable",
         "change": "Change",
         "close": "Close",
         "coin": "Asset",
@@ -95,6 +98,7 @@ Item {
         "searchPlaceholder": "Enter an asset symbol to search (for example: btc, xau, aapl)",
         "searchResults": "Search results",
         "seconds": "seconds",
+        "unavailable": "Unavailable from this data source",
         "watchList": "Watch list",
         "watchListTip": "Click an asset to add or remove it, and use arrows to reorder"
       }
@@ -116,6 +120,7 @@ Item {
         "spot": "现货"
       },
       "panel": {
+        "catalogError": "资产目录暂时不可用",
         "change": "涨跌幅",
         "close": "关闭",
         "coin": "资产",
@@ -169,6 +174,7 @@ Item {
         "searchPlaceholder": "输入资产代码搜索（例如：btc, xau, aapl）",
         "searchResults": "搜索结果",
         "seconds": "秒",
+        "unavailable": "当前数据源不可用",
         "watchList": "自选资产列表",
         "watchListTip": "点击资产名称添加或移除，使用箭头调整顺序"
       }
@@ -180,6 +186,27 @@ Item {
 
   // 币种列表
   property var allCoinsList: []
+  property var instruments: []
+  property var instrumentById: ({})
+  property var instrumentBySymbol: ({})
+  property var ambiguousSymbols: ({})
+  property bool catalogReady: false
+  property string catalogError: ""
+  property int catalogRequestGeneration: -1
+  property string catalogRequestProvider: ""
+  property string catalogRequestMarketType: ""
+  property int catalogCacheUpdatedAt: 0
+  property bool catalogFromCache: false
+  property bool persistResolvedWatchListPending: false
+  property int dataGeneration: 0
+  property var quoteStates: ({})
+  property var inFlightQuotes: ({})
+  property var queuedQuoteIds: ({})
+  property int activeQuoteCount: 0
+  readonly property int maxConcurrentQuotes: 4
+  property var quoteQueue: []
+  property string catalogCacheDir: Quickshell.env("HOME") + "/.cache/noctalia/crypto-market/catalogs"
+  property string catalogCachePath: catalogCacheDir + "/" + dataSource + "-" + (dataSource === "coingecko" ? "spot" : marketType) + ".json"
 
   // Logo 管理
   property string logoDir: Quickshell.env("HOME") + "/.cache/noctalia/crypto-market/logos"
@@ -187,252 +214,10 @@ Item {
   property var logoFailures: ({})
   property bool logosReady: false
   readonly property int logoRetryCooldownMs: 60000
-
-  readonly property var commonCoinSymbols: [
-    "btc", "eth", "bnb", "sol", "xrp", "ada", "dot", "doge", "matic", "avax",
-    "link", "ltc", "bch", "xlm", "trx", "atom", "uni", "etc", "vet", "fil",
-    "theta", "icp", "xmr", "algo", "eos", "aave", "ftm", "axs", "sand", "mana",
-    "grt", "cake", "crv", "snx", "comp", "mkr", "ksm", "near", "hbar", "flow",
-    "egld", "xtz", "btt", "zec", "waves", "dash", "zil", "neo", "chz", "bat",
-    "enj", "lrc", "1inch", "sushi", "yfi", "bal", "ren", "omg", "uma", "kava",
-    "xau", "xag", "aapl", "msft", "nvda", "tsla", "amzn", "googl", "meta", "nflx",
-    "coin", "mstr", "qqq", "spy", "zhipu", "minimax"
-  ]
-
-  readonly property var coinNames: ({
-    "btc": "Bitcoin",
-    "eth": "Ethereum",
-    "bnb": "Binance Coin",
-    "sol": "Solana",
-    "xrp": "Ripple",
-    "ada": "Cardano",
-    "dot": "Polkadot",
-    "doge": "Dogecoin",
-    "matic": "Polygon",
-    "avax": "Avalanche",
-    "link": "Chainlink",
-    "ltc": "Litecoin",
-    "bch": "Bitcoin Cash",
-    "xlm": "Stellar",
-    "trx": "TRON",
-    "atom": "Cosmos",
-    "uni": "Uniswap",
-    "etc": "Ethereum Classic",
-    "vet": "VeChain",
-    "fil": "Filecoin",
-    "theta": "Theta Network",
-    "icp": "Internet Computer",
-    "xmr": "Monero",
-    "algo": "Algorand",
-    "eos": "EOS",
-    "aave": "Aave",
-    "ftm": "Fantom",
-    "axs": "Axie Infinity",
-    "sand": "The Sandbox",
-    "mana": "Decentraland",
-    "grt": "The Graph",
-    "cake": "PancakeSwap",
-    "crv": "Curve DAO",
-    "snx": "Synthetix",
-    "comp": "Compound",
-    "mkr": "Maker",
-    "ksm": "Kusama",
-    "near": "NEAR Protocol",
-    "hbar": "Hedera",
-    "flow": "Flow",
-    "egld": "MultiversX",
-    "xtz": "Tezos",
-    "btt": "BitTorrent",
-    "zec": "Zcash",
-    "waves": "Waves",
-    "dash": "Dash",
-    "zil": "Zilliqa",
-    "neo": "NEO",
-    "chz": "Chiliz",
-    "bat": "Basic Attention Token",
-    "enj": "Enjin Coin",
-    "lrc": "Loopring",
-    "1inch": "1inch",
-    "sushi": "SushiSwap",
-    "yfi": "yearn.finance",
-    "bal": "Balancer",
-    "ren": "Ren",
-    "omg": "OMG Network",
-    "uma": "UMA",
-    "kava": "Kava",
-    "xau": "Gold",
-    "xag": "Silver",
-    "aapl": "Apple",
-    "msft": "Microsoft",
-    "nvda": "NVIDIA",
-    "tsla": "Tesla",
-    "amzn": "Amazon",
-    "googl": "Alphabet",
-    "meta": "Meta",
-    "nflx": "Netflix",
-    "coin": "Coinbase",
-    "mstr": "MicroStrategy",
-    "qqq": "Nasdaq 100 ETF",
-    "spy": "S&P 500 ETF",
-    "zhipu": "Zhipu AI",
-    "minimax": "MiniMax"
-  })
-
-  // CoinGecko 币种 ID 映射
-  readonly property var coinGeckoIds: ({
-    "btc": "bitcoin",
-    "eth": "ethereum",
-    "bnb": "binancecoin",
-    "sol": "solana",
-    "xrp": "ripple",
-    "ada": "cardano",
-    "dot": "polkadot",
-    "doge": "dogecoin",
-    "matic": "polygon-pos",
-    "avax": "avalanche-2"
-  })
-
-  // 已知资产的备用 Logo URLs
-  readonly property var fallbackLogoUrls: ({
-    "btc": "https://assets.coingecko.com/coins/images/1/large/bitcoin.png",
-    "eth": "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
-    "bnb": "https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png",
-    "sol": "https://assets.coingecko.com/coins/images/4128/large/solana.png",
-    "xrp": "https://assets.coingecko.com/coins/images/44/large/xrp-symbol-white-128.png",
-    "ada": "https://assets.coingecko.com/coins/images/975/large/cardano.png",
-    "dot": "https://assets.coingecko.com/coins/images/12171/large/polkadot.png",
-    "doge": "https://assets.coingecko.com/coins/images/5/large/dogecoin.png",
-    "matic": "https://assets.coingecko.com/coins/images/4713/large/matic-token-icon.png",
-    "avax": "https://assets.coingecko.com/coins/images/12559/large/Avalanche_Circle_RedWhite_Trans.png",
-    "zhipu": "https://www.zhipuai.cn/favicon.png",
-    "minimax": "https://filecdn.minimax.chat/public/58eca777-e31f-448a-9823-e2220e49b426.png"
-  })
-
-  // 币种图标映射（Emoji 作为备用）
-  readonly property var coinIcons: ({
-    "btc": "🪙",
-    "eth": "💎",
-    "bnb": "🔶",
-    "sol": "🌞",
-    "xrp": "💧",
-    "ada": "🔷",
-    "dot": "⚪",
-    "doge": "🐕",
-    "matic": "🟣",
-    "avax": "🔺",
-    "xau": "Au",
-    "xag": "Ag",
-    "aapl": "A",
-    "msft": "M",
-    "nvda": "N",
-    "tsla": "T",
-    "amzn": "A",
-    "googl": "G",
-    "meta": "M",
-    "nflx": "N",
-    "coin": "C",
-    "mstr": "M",
-    "qqq": "Q",
-    "spy": "S",
-    "zhipu": "Z",
-    "minimax": "M"
-  })
-
-  // 数据源适配器
-  readonly property var dataSourceAdapters: ({
-    "huobi": {
-      name: "火币",
-      getUrl: function(coin) {
-        if (root.marketType === "perpetual") {
-          return `https://api.hbdm.com/linear-swap-ex/market/history/kline?period=1day&size=1&contract_code=${root.formatExchangeSymbol(coin, "huobi", "perpetual")}`;
-        }
-        return `https://api.huobi.pro/market/history/kline?period=1day&size=1&symbol=${root.formatExchangeSymbol(coin, "huobi", "spot")}`;
-      },
-      parseResponse: function(response, coin) {
-        if (response.status === "ok" && response.data && response.data.length > 0) {
-          const kline = response.data[0];
-          return {
-            open: kline.open,
-            close: kline.close,
-            high: kline.high,
-            low: kline.low,
-            volume: kline.vol
-          };
-        }
-        return null;
-      }
-    },
-    "binance": {
-      name: "币安",
-      getUrl: function(coin) {
-        if (root.marketType === "perpetual") {
-          return `https://fapi.binance.com/fapi/v1/klines?symbol=${root.formatExchangeSymbol(coin, "binance", "perpetual")}&interval=1d&limit=1`;
-        }
-        return `https://api.binance.com/api/v3/klines?symbol=${root.formatExchangeSymbol(coin, "binance", "spot")}&interval=1d&limit=1`;
-      },
-      parseResponse: function(response, coin) {
-        if (response && response.length > 0) {
-          const kline = response[0];
-          return {
-            open: parseFloat(kline[1]),
-            close: parseFloat(kline[4]),
-            high: parseFloat(kline[2]),
-            low: parseFloat(kline[3]),
-            volume: parseFloat(kline[5])
-          };
-        }
-        return null;
-      }
-    },
-    "okx": {
-      name: "OKX",
-      getUrl: function(coin) {
-        if (root.marketType === "perpetual") {
-          return `https://www.okx.com/api/v5/market/candles?instId=${root.formatExchangeSymbol(coin, "okx", "perpetual")}&bar=1D&limit=1`;
-        }
-        return `https://www.okx.com/api/v5/market/candles?instId=${root.formatExchangeSymbol(coin, "okx", "spot")}&bar=1D&limit=1`;
-      },
-      parseResponse: function(response, coin) {
-        if (response.code === "0" && response.data && response.data.length > 0) {
-          const kline = response.data[0];
-          return {
-            open: parseFloat(kline[1]),
-            close: parseFloat(kline[4]),
-            high: parseFloat(kline[2]),
-            low: parseFloat(kline[3]),
-            volume: parseFloat(kline[5])
-          };
-        }
-        return null;
-      }
-    },
-    "coingecko": {
-      name: "CoinGecko",
-      getUrl: function(coin) {
-        const key = root.normalizeAssetKey(coin);
-        const id = root.coinGeckoIds[key] || key;
-        return `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd&include_24hr_change=true&include_24hr_vol=true&include_24hr_high_low=true`;
-      },
-      parseResponse: function(response, coin) {
-        const key = root.normalizeAssetKey(coin);
-        const id = root.coinGeckoIds[key] || key;
-        const data = response[id];
-        if (data && data.usd) {
-          const currentPrice = data.usd;
-          const change = data.usd_24h_change || 0;
-          const openPrice = currentPrice / (1 + change / 100);
-          return {
-            open: openPrice,
-            close: currentPrice,
-            high: data.usd_24h_high || currentPrice,
-            low: data.usd_24h_low || currentPrice,
-            volume: data.usd_24h_vol || 0
-          };
-        }
-        return null;
-      }
-    }
-  })
+  // TradingView logoid cache: instrument id -> logoid, persisted so the
+  // symbol-search endpoint is queried at most once per instrument.
+  property var tvLogoIds: ({})
+  readonly property string tvLogoIdCachePath: catalogCacheDir + "/tradingview-logoids.json"
 
   // 数据状态
   property var marketData: ({})
@@ -442,16 +227,18 @@ Item {
   property bool coinsListRefetchPending: false
 
   Component.onCompleted: {
-    watchList = normalizeAssetList(watchList);
-    barCoin = normalizeAssetKey(barCoin);
+    watchList = normalizeWatchList(watchList);
+    barCoin = normalizeWatchReference(barCoin);
     if (!watchList.includes(barCoin)) {
       barCoin = watchList.length > 0 ? watchList[0] : "btc";
     }
-    if (!marketTypes.includes(marketType)) {
+    if (dataSource === "coingecko" || !marketTypes.includes(marketType)) {
       marketType = "spot";
     }
     loadTranslations();
     initLogoCache();
+    loadTvLogoIdCache();
+    loadCatalogCache();
     fetchCoinsList();
   }
 
@@ -461,8 +248,8 @@ Item {
     watchChanges: false
     printErrors: false
 
-    onLoaded: root.storeTranslation("en", text)
-    onTextChanged: root.storeTranslation("en", text)
+    onLoaded: root.storeTranslation("en", text())
+    onTextChanged: root.storeTranslation("en", text())
   }
 
   FileView {
@@ -471,8 +258,8 @@ Item {
     watchChanges: false
     printErrors: false
 
-    onLoaded: root.storeTranslation("zh-CN", text)
-    onTextChanged: root.storeTranslation("zh-CN", text)
+    onLoaded: root.storeTranslation("zh-CN", text())
+    onTextChanged: root.storeTranslation("zh-CN", text())
   }
 
   FileView {
@@ -480,6 +267,24 @@ Item {
     path: root.configPath
     watchChanges: false
     printErrors: false
+  }
+
+  FileView {
+    id: tvLogoIdCacheFile
+    path: root.tvLogoIdCachePath
+    watchChanges: false
+    printErrors: false
+
+    onLoaded: root.applyTvLogoIdCache(text())
+  }
+
+  FileView {
+    id: catalogCacheFile
+    path: root.catalogCachePath
+    watchChanges: false
+    printErrors: false
+
+    onLoaded: root.applyCatalogCache(text())
   }
 
   Process {
@@ -530,60 +335,98 @@ Item {
   }
 
   function normalizeAssetKey(asset) {
-    let text = String(asset || "").trim().toLowerCase();
-    if (text === "") return "";
-
-    text = text
-      .replace(/_/g, "-")
-      .replace(/\.perp$/i, "")
-      .replace(/-swap$/i, "")
-      .replace(/-usdt$/i, "")
-      .replace(/\/usdt$/i, "")
-      .replace(/usdt$/i, "")
-      .replace(/-+$/g, "");
-
-    return text;
+    return MarketProviders.normalizeSymbol(asset);
   }
 
-  function normalizeAssetList(assets) {
+  function parseInstrumentReference(reference) {
+    const text = String(reference || "").trim();
+    const parts = text.split(":");
+    if (parts.length < 3) return null;
+    if (!["huobi", "binance", "okx", "coingecko"].includes(parts[0])) return null;
+    if (!["spot", "perpetual"].includes(parts[1])) return null;
+    const exchangeSymbol = parts.slice(2).join(":");
+    if (exchangeSymbol === "") return null;
+    return {
+      id: text,
+      provider: parts[0],
+      marketType: parts[1],
+      exchangeSymbol: exchangeSymbol
+    };
+  }
+
+  function normalizeWatchReference(asset) {
+    if (asset && typeof asset === "object" && asset.id) return String(asset.id);
+    const text = String(asset || "").trim();
+    if (text === "") return "";
+    if (parseInstrumentReference(text)) return text;
+    return normalizeAssetKey(text);
+  }
+
+  function normalizeWatchList(assets) {
     const result = [];
     const seen = {};
     if (!Array.isArray(assets)) return result;
 
     for (let i = 0; i < assets.length; i++) {
-      const symbol = normalizeAssetKey(assets[i]);
-      if (symbol !== "" && !seen[symbol]) {
-        seen[symbol] = true;
-        result.push(symbol);
+      const reference = normalizeWatchReference(assets[i]);
+      if (reference !== "" && !seen[reference]) {
+        seen[reference] = true;
+        result.push(reference);
       }
     }
-
     return result;
   }
 
-  function formatExchangeSymbol(asset, source, type) {
-    const symbol = normalizeAssetKey(asset).toUpperCase();
-    const selectedType = type || root.marketType;
+  function getInstrument(reference) {
+    if (reference && typeof reference === "object" && reference.id) return reference;
+    const text = String(reference || "").trim();
+    if (text !== "" && instrumentById[text]) return instrumentById[text];
 
-    if (symbol.indexOf("-") !== -1 || symbol.indexOf("/") !== -1) {
-      return source === "binance" ? symbol.replace(/[-/]/g, "") : symbol.replace("/", "-");
-    }
+    const parsedReference = parseInstrumentReference(text);
+    const key = normalizeAssetKey(parsedReference ? parsedReference.exchangeSymbol : text);
+    if (!parsedReference && key !== "" && instrumentBySymbol[key] && !ambiguousSymbols[key]) return instrumentBySymbol[key];
 
-    if (source === "okx") {
-      return selectedType === "perpetual" ? symbol + "-USDT-SWAP" : symbol + "-USDT";
-    }
+    if (key === "") return null;
+    return {
+      id: parsedReference ? parsedReference.id : key,
+      provider: parsedReference ? parsedReference.provider : dataSource,
+      marketType: parsedReference ? parsedReference.marketType : (dataSource === "coingecko" ? "spot" : marketType),
+      exchangeSymbol: parsedReference ? parsedReference.exchangeSymbol : key,
+      symbol: key,
+      displaySymbol: key.toUpperCase(),
+      name: key.toUpperCase(),
+      base: key.toUpperCase(),
+      quote: dataSource === "coingecko" ? "USD" : "USDT",
+      status: "unresolved",
+      logoUrl: ""
+    };
+  }
 
-    if (source === "huobi") {
-      return selectedType === "perpetual" ? symbol + "-USDT" : symbol.toLowerCase() + "usdt";
-    }
+  function getInstrumentId(reference) {
+    const instrument = getInstrument(reference);
+    return instrument ? instrument.id : normalizeWatchReference(reference);
+  }
 
-    return symbol + "USDT";
+  function getInstrumentSymbol(reference) {
+    const instrument = getInstrument(reference);
+    return instrument ? instrument.symbol : normalizeAssetKey(reference);
+  }
+
+  function getInstrumentDisplaySymbol(reference) {
+    const instrument = getInstrument(reference);
+    return instrument ? instrument.displaySymbol : normalizeAssetKey(reference).toUpperCase();
+  }
+
+  function getInstrumentName(reference) {
+    const instrument = getInstrument(reference);
+    if (!instrument) return normalizeAssetKey(reference).toUpperCase();
+    return instrument.name || instrument.displaySymbol;
   }
 
   // 创建缓存目录的 Process
   Process {
     id: mkdirProc
-    command: ["mkdir", "-p", root.logoDir]
+    command: ["mkdir", "-p", root.logoDir, root.catalogCacheDir]
     stdout: StdioCollector {}
     stderr: StdioCollector {}
 
@@ -596,64 +439,24 @@ Item {
     }
   }
 
-  // 检查本地 logo 文件
-  Process {
-    id: checkLogoProc
-    command: ["sh", "-c", "ls " + root.logoDir + "/*.png 2>/dev/null | wc -l"]
-    stdout: StdioCollector {}
-    stderr: StdioCollector {}
-
-    onExited: exitCode => {
-      const count = parseInt(String(stdout.text).trim());
-      const totalCoins = Object.keys(root.coinGeckoIds).length;
-
-      if (count >= totalCoins) {
-        for (let coin in root.coinGeckoIds) {
-          root.logoCache[coin] = root.logoDir + "/" + coin + ".png";
-        }
-        root.logosReady = true;
-      } else {
-        downloadAllLogos();
-      }
-    }
-  }
-
   // 初始化 logo 缓存
   function initLogoCache() {
     mkdirProc.running = true;
   }
 
-  // 检查本地是否已有 logo
-  function checkLocalLogos() {
-    checkLogoProc.running = true;
-  }
-
-  // 下载所有 logo
-  function downloadAllLogos() {
-    let downloaded = 0;
-    const totalCoins = Object.keys(coinGeckoIds).length;
-
-    for (let coin in coinGeckoIds) {
-      downloadLogo(coin, fallbackLogoUrls[coin], function(success) {
-        downloaded++;
-        if (success) {
-          root.logoCache[coin] = root.logoDir + "/" + coin + ".png";
-        }
-        if (downloaded === totalCoins) {
-          root.logosReady = true;
-          root.refreshNonce++;
-        }
-      });
-    }
-  }
-
-  // 下载单个 logo
-  function downloadLogo(coin, url, callback) {
-    const outputPath = logoDir + "/" + coin + ".png";
+  // 下载单个 logo（ext 默认为 png，股票 SVG logo 传入 "svg"）
+  function downloadLogo(cacheKey, url, callback, ext) {
+    const extension = ext === "svg" ? "svg" : "png";
+    const outputPath = logoDir + "/" + cacheKey + "." + extension;
+    const tempPath = outputPath + ".tmp";
+    // SVG 可能以注释开头，file 会误判为 text/plain，按扩展名选择校验方式
+    const validator = extension === "svg"
+      ? "test -s \"$1\" && grep -qi '<svg' \"$1\""
+      : "test -s \"$1\" && file --brief --mime-type \"$1\" | grep -q '^image/'";
 
     // 检查文件是否已存在
     const checkProc = downloadProcComponent.createObject(root, {
-      "command": ["test", "-f", outputPath]
+      "command": ["sh", "-c", validator, "sh", outputPath]
     });
 
     checkProc.exited.connect(function(exitCode) {
@@ -664,14 +467,21 @@ Item {
       }
 
       const proc = downloadProcComponent.createObject(root, {
-        "command": proxyUrl ? ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-x", proxyUrl, "-o", outputPath, url] : ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-o", outputPath, url]
+        "command": proxyUrl ? ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-x", proxyUrl, "-o", tempPath, url] : ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-o", tempPath, url]
       });
 
       proc.exited.connect(function(exitCode) {
         if (exitCode === 0) {
-          callback(true);
+          const finalizeProc = downloadProcComponent.createObject(root, {
+            "command": ["sh", "-c", "if " + validator + "; then mv \"$1\" \"$2\"; else rm -f \"$1\"; exit 1; fi", "sh", tempPath, outputPath]
+          });
+          finalizeProc.exited.connect(function(finalizeExitCode) {
+            callback(finalizeExitCode === 0);
+            finalizeProc.destroy();
+          });
+          finalizeProc.running = true;
         } else {
-          Logger.w("CryptoMarket", "Failed to download logo for " + coin + ": " + String(proc.stderr.text));
+          Logger.w("CryptoMarket", "Failed to download logo for " + cacheKey + ": " + String(proc.stderr.text));
           callback(false);
         }
         proc.destroy();
@@ -684,73 +494,191 @@ Item {
     checkProc.running = true;
   }
 
-  // 动态下载币种 Logo
-  function requestLogo(coin) {
-    const key = normalizeAssetKey(coin);
-    if (key === "") return;
-    if (logoCache[key]) return;
-    if (!canRetryLogo(key)) return;
+  function getLogoCacheKey(reference) {
+    const instrument = getInstrument(reference);
+    const id = instrument ? instrument.id : normalizeWatchReference(reference);
+    return String(id || "asset").replace(/[^A-Za-z0-9._-]/g, "_");
+  }
 
-    // 标记为正在下载，避免重复
+  // 动态下载资产 Logo
+  function requestLogo(reference) {
+    const instrument = getInstrument(reference);
+    if (!instrument) return;
+    const id = instrument.id;
+    if (logoCache[id]) return;
+    if (!canRetryLogo(id)) return;
+
+    const cacheKey = getLogoCacheKey(id);
     const nextCache = Object.assign({}, logoCache);
-    nextCache[key] = "downloading";
+    nextCache[id] = "downloading";
     root.logoCache = nextCache;
 
-    // 已知币种直接使用静态图片 URL，避免频繁请求 CoinGecko metadata API 触发限流。
-    const logoUrl = fallbackLogoUrls[key];
-    if (logoUrl) {
-      downloadLogo(key, logoUrl, function(success) {
-        if (success) {
-          setLogoPath(key, logoDir + "/" + key + ".png");
-        } else {
-          markLogoFailed(key);
-        }
-      });
-    } else {
-      // 未知币种，通过搜索 API 查找
-      const searchUrl = `https://api.coingecko.com/api/v3/search?query=${key}`;
-      const searchProc = curlProcComponent.createObject(root, {
-        "command": proxyUrl ? ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-x", proxyUrl, searchUrl] : ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", searchUrl]
-      });
+    // 先探测磁盘缓存（依次检查 png、svg），命中则直接复用，不发起网络请求
+    const probeProc = downloadProcComponent.createObject(root, {
+      "command": ["sh", "-c", "if test -s \"$1\" && file --brief --mime-type \"$1\" | grep -q '^image/'; then echo png; elif test -s \"$2\" && grep -qi '<svg' \"$2\"; then echo svg; fi", "sh", logoDir + "/" + cacheKey + ".png", logoDir + "/" + cacheKey + ".svg"]
+    });
 
-      searchProc.exited.connect(function(exitCode) {
-        if (exitCode === 0) {
-          try {
-            const response = JSON.parse(String(searchProc.stdout.text));
-            if (response.coins && response.coins.length > 0) {
-              const foundCoin = response.coins[0];
-              const logoUrl = foundCoin.large || foundCoin.thumb;
-              if (logoUrl) {
-                downloadLogo(key, logoUrl, function(success) {
-                  if (success) {
-                    setLogoPath(key, logoDir + "/" + key + ".png");
-                  } else {
-                    markLogoFailed(key);
-                  }
-                });
-              } else {
-                markLogoFailed(key);
-              }
-            } else {
-              markLogoFailed(key);
-            }
-          } catch (e) {
-            Logger.w("CryptoMarket", "Failed to parse logo search response for " + key + ": " + e);
-            markLogoFailed(key);
+    probeProc.exited.connect(function(exitCode) {
+      const cachedExt = String(probeProc.stdout.text).trim();
+      probeProc.destroy();
+      if (cachedExt === "png" || cachedExt === "svg") {
+        root.finishLogoDownload(id, cacheKey, true, cachedExt);
+        return;
+      }
+
+      if (instrument.logoUrl) {
+        root.downloadLogo(cacheKey, instrument.logoUrl, function(success) {
+          if (success) {
+            root.finishLogoDownload(id, cacheKey, true);
+          } else {
+            root.searchExternalLogo(instrument, cacheKey);
           }
-        } else {
-          Logger.w("CryptoMarket", "Failed to search logo for " + key + ": " + String(searchProc.stderr.text));
-          markLogoFailed(key);
-        }
-        searchProc.destroy();
-      });
+        });
+        return;
+      }
 
-      searchProc.running = true;
+      // 已解析过的股票 logoid：直接走 TradingView 下载，不再重复搜索。
+      if (root.tvLogoIds[id]) {
+        root.downloadTradingViewLogo(instrument, cacheKey, root.tvLogoIds[id]);
+        return;
+      }
+
+      root.searchExternalLogo(instrument, cacheKey);
+    });
+    probeProc.running = true;
+  }
+
+  function searchExternalLogo(instrument, cacheKey) {
+    const id = instrument.id;
+    const symbol = instrument.symbol;
+    // CoinGecko logo search is exact-match only; the first fuzzy result is unsafe.
+    const searchText = encodeURIComponent(instrument.exchangeSymbol || instrument.symbol || instrument.name);
+    const searchUrl = "https://api.coingecko.com/api/v3/search?query=" + searchText;
+    const searchProc = curlProcComponent.createObject(root, {
+      "command": proxyUrl ? ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-x", proxyUrl, searchUrl] : ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", searchUrl]
+    });
+
+    searchProc.exited.connect(function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          const response = JSON.parse(String(searchProc.stdout.text));
+          const candidates = Array.isArray(response.coins) ? response.coins : [];
+          const exchangeId = String(instrument.exchangeSymbol || "").toLowerCase();
+          const exactId = candidates.find(candidate => String(candidate.id || "").toLowerCase() === exchangeId);
+          const symbolMatches = candidates.filter(candidate => normalizeAssetKey(candidate.symbol) === symbol);
+          const foundCoin = exactId || (symbolMatches.length === 1 ? symbolMatches[0] : null);
+          const logoUrl = foundCoin ? (foundCoin.large || foundCoin.thumb) : "";
+          if (logoUrl) {
+            downloadLogo(cacheKey, logoUrl, function(success) {
+              root.finishLogoDownload(id, cacheKey, success);
+            });
+          } else {
+            root.searchTradingViewLogo(instrument, cacheKey);
+          }
+        } catch (e) {
+          Logger.w("CryptoMarket", "Failed to parse logo search response for " + id + ": " + e);
+          root.searchTradingViewLogo(instrument, cacheKey);
+        }
+      } else {
+        Logger.w("CryptoMarket", "Failed to search logo for " + id + ": " + String(searchProc.stderr.text));
+        root.searchTradingViewLogo(instrument, cacheKey);
+      }
+      searchProc.destroy();
+    });
+    searchProc.running = true;
+  }
+
+  // 股票 logo 回退：通过 TradingView symbol-search 解析 logoid。
+  function searchTradingViewLogo(instrument, cacheKey) {
+    const id = instrument.id;
+    const searchUrl = MarketProviders.tradingViewSearchUrl(instrument);
+    if (searchUrl === "") {
+      markLogoFailed(id);
+      return;
+    }
+
+    const baseCommand = ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-H", "Origin: https://www.tradingview.com"];
+    const searchProc = curlProcComponent.createObject(root, {
+      "command": proxyUrl ? baseCommand.concat(["-x", proxyUrl, searchUrl]) : baseCommand.concat([searchUrl])
+    });
+
+    searchProc.exited.connect(function(exitCode) {
+      if (exitCode === 0) {
+        try {
+          const response = JSON.parse(String(searchProc.stdout.text));
+          const logoid = MarketProviders.parseTradingViewLogoId(response, instrument);
+          if (logoid) {
+            root.storeTvLogoId(id, logoid);
+            root.downloadTradingViewLogo(instrument, cacheKey, logoid);
+          } else {
+            markLogoFailed(id);
+          }
+        } catch (e) {
+          Logger.w("CryptoMarket", "Failed to parse TradingView logo search response for " + id + ": " + e);
+          markLogoFailed(id);
+        }
+      } else {
+        Logger.w("CryptoMarket", "Failed to search TradingView logo for " + id + ": " + String(searchProc.stderr.text));
+        markLogoFailed(id);
+      }
+      searchProc.destroy();
+    });
+    searchProc.running = true;
+  }
+
+  function downloadTradingViewLogo(instrument, cacheKey, logoid) {
+    const id = instrument.id;
+    const logoUrl = MarketProviders.tradingViewLogoUrl(logoid);
+    if (logoUrl === "") {
+      markLogoFailed(id);
+      return;
+    }
+    downloadLogo(cacheKey, logoUrl, function(success) {
+      root.finishLogoDownload(id, cacheKey, success, "svg");
+    }, "svg");
+  }
+
+  function storeTvLogoId(id, logoid) {
+    if (!id || !logoid || root.tvLogoIds[id] === logoid) return;
+    const next = Object.assign({}, root.tvLogoIds);
+    next[id] = logoid;
+    root.tvLogoIds = next;
+    tvLogoIdCacheFile.setText(JSON.stringify(next, null, 2));
+  }
+
+  function loadTvLogoIdCache() {
+    if (tvLogoIdCacheFile.path !== "") tvLogoIdCacheFile.reload();
+  }
+
+  function applyTvLogoIdCache(text) {
+    if (!text || String(text).trim() === "") return;
+    try {
+      const cache = JSON.parse(String(text));
+      if (!cache || typeof cache !== "object" || Array.isArray(cache)) return;
+      const next = Object.assign({}, root.tvLogoIds);
+      const keys = Object.keys(cache);
+      for (let i = 0; i < keys.length; i++) {
+        if (typeof cache[keys[i]] === "string" && cache[keys[i]] !== "") {
+          next[keys[i]] = cache[keys[i]];
+        }
+      }
+      root.tvLogoIds = next;
+    } catch (e) {
+      Logger.w("CryptoMarket", "Failed to parse TradingView logoid cache: " + e);
     }
   }
 
-  function setLogoPath(coin, path) {
-    const key = normalizeAssetKey(coin);
+  function finishLogoDownload(id, cacheKey, success, ext) {
+    if (success) {
+      const extension = ext === "svg" ? "svg" : "png";
+      setLogoPath(id, logoDir + "/" + cacheKey + "." + extension);
+    } else {
+      markLogoFailed(id);
+    }
+  }
+
+  function setLogoPath(reference, path) {
+    const key = getInstrumentId(reference);
     const nextCache = Object.assign({}, root.logoCache);
     nextCache[key] = path;
     root.logoCache = nextCache;
@@ -762,8 +690,8 @@ Item {
     root.refreshNonce++;
   }
 
-  function markLogoFailed(coin) {
-    const key = normalizeAssetKey(coin);
+  function markLogoFailed(reference) {
+    const key = getInstrumentId(reference);
     const nextCache = Object.assign({}, root.logoCache);
     delete nextCache[key];
     root.logoCache = nextCache;
@@ -774,8 +702,8 @@ Item {
     root.refreshNonce++;
   }
 
-  function canRetryLogo(coin) {
-    const key = normalizeAssetKey(coin);
+  function canRetryLogo(reference) {
+    const key = getInstrumentId(reference);
     const failedAt = root.logoFailures[key];
     if (!failedAt) return true;
 
@@ -818,8 +746,11 @@ Item {
   }
 
   // 获取 logo 路径
-  function getLogoPath(coin) {
-    const key = normalizeAssetKey(coin);
+  function getLogoPath(reference) {
+    const instrument = getInstrument(reference);
+    if (!instrument) return "";
+    const key = instrument.id;
+
     // 如果缓存中有记录，直接返回
     if (logoCache[key] && logoCache[key] !== "downloading") {
       return "file://" + logoCache[key];
@@ -827,10 +758,6 @@ Item {
 
     // 如果正在下载，返回空
     if (logoCache[key] === "downloading") {
-      return "";
-    }
-
-    if (logoFailures[key]) {
       return "";
     }
 
@@ -843,64 +770,175 @@ Item {
     repeat: true
     running: true
     triggeredOnStart: true
-    onTriggered: {
-      root.watchList.forEach(function(coin) {
-        root.fetchMarketData(coin);
-      });
+    onTriggered: root.refreshMarketData(false)
+  }
+
+  function refreshMarketData(force) {
+    for (let i = 0; i < root.watchList.length; i++) {
+      root.fetchMarketData(root.watchList[i], force === true);
+    }
+    if (root.watchList.length === 0) root.isLoading = false;
+  }
+
+  // 将报价请求放入有界队列，避免每次刷新同时启动所有 curl。
+  function fetchMarketData(reference, force) {
+    if (!root.catalogReady) return;
+    const instrument = root.getInstrument(reference);
+    if (!instrument) return;
+    const id = instrument.id;
+    const generation = root.dataGeneration;
+
+    if (instrument.status === "unresolved") {
+      const unresolvedState = root.quoteStates[id];
+      if (!unresolvedState || unresolvedState.errorCode !== "unavailable") {
+        root.setQuoteFailure(instrument, "unavailable", "Instrument is not available from the selected provider");
+      }
+      return;
+    }
+
+    const state = root.quoteStates[id];
+    if (!force && state?.nextRetryAt && Date.now() < state.nextRetryAt) return;
+    if (root.inFlightQuotes[id] === generation || root.queuedQuoteIds[id] === generation) return;
+
+    const nextQueue = root.quoteQueue.slice();
+    nextQueue.push({ id: id, generation: generation });
+    root.quoteQueue = nextQueue;
+
+    const nextQueued = Object.assign({}, root.queuedQuoteIds);
+    nextQueued[id] = generation;
+    root.queuedQuoteIds = nextQueued;
+    root.pumpQuoteQueue();
+  }
+
+  function pumpQuoteQueue() {
+    while (root.activeQuoteCount < root.maxConcurrentQuotes && root.quoteQueue.length > 0) {
+      const nextQueue = root.quoteQueue.slice();
+      const job = nextQueue.shift();
+      root.quoteQueue = nextQueue;
+
+      const nextQueued = Object.assign({}, root.queuedQuoteIds);
+      if (nextQueued[job.id] === job.generation) delete nextQueued[job.id];
+      root.queuedQuoteIds = nextQueued;
+
+      if (job.generation !== root.dataGeneration) continue;
+      const instrument = root.instrumentById[job.id] || root.getInstrument(job.id);
+      if (!instrument || instrument.status === "unresolved") continue;
+      root.startQuoteRequest(instrument, job.generation);
     }
   }
 
-  // 获取市场数据
-  function fetchMarketData(coin) {
-    const adapter = dataSourceAdapters[dataSource];
-    if (!adapter) return;
-
-    if (dataSource === "coingecko" && marketType !== "spot") {
-      Logger.w("CryptoMarket", "CoinGecko only supports spot crypto asset IDs in this plugin");
+  function startQuoteRequest(instrument, generation) {
+    const url = MarketProviders.quoteUrl(root.dataSource, instrument.marketType, instrument);
+    if (url === "") {
+      root.setQuoteFailure(instrument, "unsupported", "Provider cannot build a quote request");
+      return;
     }
 
-    const key = normalizeAssetKey(coin);
-    const url = adapter.getUrl(coin);
+    const nextInFlight = Object.assign({}, root.inFlightQuotes);
+    nextInFlight[instrument.id] = generation;
+    root.inFlightQuotes = nextInFlight;
+    root.activeQuoteCount++;
+    root.setQuoteLoading(instrument);
 
     const proc = curlProcComponent.createObject(root, {
       "command": proxyUrl ? ["curl", "-fsSL", "--connect-timeout", "8", "--max-time", "20", "-x", proxyUrl, url] : ["curl", "-fsSL", "--connect-timeout", "8", "--max-time", "20", url]
     });
 
     proc.exited.connect(function(exitCode) {
-      if (exitCode === 0) {
-        try {
-          const response = JSON.parse(String(proc.stdout.text));
-          const parsed = adapter.parseResponse(response, key);
-
-          if (parsed && parsed.open > 0 && parsed.close > 0) {
-            const change = ((parsed.close - parsed.open) / parsed.open * 100);
-
-            const nextMarketData = Object.assign({}, marketData);
-            nextMarketData[key] = {
-              open: parsed.open,
-              close: parsed.close,
-              high: parsed.high,
-              low: parsed.low,
-              volume: parsed.volume,
-              change: change,
-              isRising: parsed.close >= parsed.open
-            };
-            marketData = nextMarketData;
-
-            refreshNonce++;
-            root.isLoading = false;
-            root.errorMessage = "";
+      if (generation === root.dataGeneration) {
+        if (exitCode === 0) {
+          try {
+            const response = JSON.parse(String(proc.stdout.text));
+            const parsed = MarketProviders.parseQuote(root.dataSource, response, instrument);
+            const numericFields = parsed ? [parsed.open, parsed.close, parsed.high, parsed.low, parsed.volume] : [];
+            const validQuote = parsed && numericFields.every(value => Number.isFinite(Number(value)))
+              && Number(parsed.open) > 0 && Number(parsed.close) > 0;
+            if (validQuote) {
+              root.setQuoteSuccess(instrument, parsed);
+            } else {
+              root.setQuoteFailure(instrument, "invalid-response", "Provider returned no usable quote");
+            }
+          } catch (e) {
+            root.setQuoteFailure(instrument, "parse-error", String(e));
           }
-        } catch (e) {
-          Logger.w("CryptoMarket", "Failed to parse market data for " + coin + ": " + e);
+        } else {
+          root.setQuoteFailure(instrument, "network-error", String(proc.stderr.text).trim());
         }
-      } else {
-        Logger.w("CryptoMarket", "Failed to fetch market data for " + coin + ": " + String(proc.stderr.text));
       }
+
+      const nextInFlight = Object.assign({}, root.inFlightQuotes);
+      if (nextInFlight[instrument.id] === generation) delete nextInFlight[instrument.id];
+      root.inFlightQuotes = nextInFlight;
+      root.activeQuoteCount = Math.max(0, root.activeQuoteCount - 1);
+      root.isLoading = false;
       proc.destroy();
+      root.pumpQuoteQueue();
     });
 
     proc.running = true;
+  }
+
+  function setQuoteLoading(instrument) {
+    const previous = root.quoteStates[instrument.id] || ({});
+    const nextStates = Object.assign({}, root.quoteStates);
+    nextStates[instrument.id] = Object.assign({}, previous, {
+      status: previous.status === "ready" ? "ready" : "loading",
+      errorCode: "",
+      errorMessage: ""
+    });
+    root.quoteStates = nextStates;
+    root.refreshNonce++;
+  }
+
+  function setQuoteSuccess(instrument, parsed) {
+    const change = ((parsed.close - parsed.open) / parsed.open * 100);
+    const quote = {
+      open: parsed.open,
+      close: parsed.close,
+      high: parsed.high,
+      low: parsed.low,
+      volume: parsed.volume,
+      change: change,
+      isRising: parsed.close >= parsed.open,
+      updatedAt: Date.now()
+    };
+
+    const nextMarketData = Object.assign({}, root.marketData);
+    nextMarketData[instrument.id] = quote;
+    root.marketData = nextMarketData;
+
+    const nextStates = Object.assign({}, root.quoteStates);
+    nextStates[instrument.id] = {
+      status: "ready",
+      updatedAt: quote.updatedAt,
+      failureCount: 0,
+      nextRetryAt: 0,
+      errorCode: "",
+      errorMessage: ""
+    };
+    root.quoteStates = nextStates;
+    root.errorMessage = "";
+    root.refreshNonce++;
+  }
+
+  function setQuoteFailure(instrument, code, message) {
+    const previous = root.quoteStates[instrument.id] || ({});
+    const failureCount = Number(previous.failureCount || 0) + 1;
+    const hasQuote = root.marketData[instrument.id] !== undefined;
+    const delay = Math.min(300000, 1000 * Math.pow(2, Math.min(failureCount, 8)));
+    const nextStates = Object.assign({}, root.quoteStates);
+    nextStates[instrument.id] = {
+      status: hasQuote ? "stale" : "error",
+      updatedAt: previous.updatedAt || 0,
+      failureCount: failureCount,
+      nextRetryAt: Date.now() + delay,
+      errorCode: code,
+      errorMessage: message
+    };
+    root.quoteStates = nextStates;
+    root.isLoading = false;
+    root.refreshNonce++;
+    Logger.w("CryptoMarket", "Quote failed [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.exchangeSymbol + "] " + code + ": " + message);
   }
 
   // 格式化价格
@@ -927,7 +965,7 @@ Item {
 
   // 获取价格颜色
   function getPriceColor(coin) {
-    const data = marketData[normalizeAssetKey(coin)];
+    const data = marketData[getInstrumentId(coin)];
     if (!data) return "#888888";
 
     const isRising = data.isRising;
@@ -942,47 +980,41 @@ Item {
 
   // 获取币种图标
   function getCoinIcon(coin) {
-    const key = normalizeAssetKey(coin);
-    return coinIcons[key] || key.slice(0, 2).toUpperCase();
+    const key = getInstrumentSymbol(coin);
+    return key.slice(0, 2).toUpperCase();
   }
 
   function getCoinName(coin) {
-    const symbol = normalizeAssetKey(coin);
-    const name = coinNames[symbol];
-    return name ? symbol.toUpperCase() + " (" + name + ")" : symbol.toUpperCase();
+    const instrument = getInstrument(coin);
+    if (!instrument) return normalizeAssetKey(coin).toUpperCase();
+    const name = instrument.name || "";
+    return name && name.toLowerCase() !== instrument.displaySymbol.toLowerCase()
+      ? instrument.displaySymbol + " (" + name + ")"
+      : instrument.displaySymbol;
   }
 
   function searchCoinSymbols(query) {
     const text = normalizeAssetKey(query);
     if (text === "") return [];
 
-    const coins = [];
-    const seen = {};
-    const appendCoin = function(coin) {
-      const symbol = normalizeAssetKey(coin);
-      if (symbol !== "" && !seen[symbol]) {
-        seen[symbol] = true;
-        coins.push(symbol);
-      }
-    };
-
-    appendCoin(text);
-    root.commonCoinSymbols.forEach(appendCoin);
-    root.allCoinsList.forEach(appendCoin);
-
-    const filtered = coins.filter(function(coin) {
-      const name = root.coinNames[coin] || "";
-      return coin.indexOf(text) === 0 || name.toLowerCase().indexOf(text) !== -1;
+    const source = root.catalogReady ? root.instruments : [];
+    const filtered = source.filter(function(instrument) {
+      const symbol = String(instrument.symbol || "").toLowerCase();
+      const displaySymbol = String(instrument.displaySymbol || "").toLowerCase();
+      const name = String(instrument.name || "").toLowerCase();
+      return symbol.indexOf(text) === 0 || displaySymbol.indexOf(text) === 0 || name.indexOf(text) !== -1;
     });
 
     filtered.sort(function(a, b) {
-      const aSymbolMatch = a.indexOf(text) === 0 ? 0 : 1;
-      const bSymbolMatch = b.indexOf(text) === 0 ? 0 : 1;
-      if (aSymbolMatch !== bSymbolMatch) return aSymbolMatch - bSymbolMatch;
-      return a.localeCompare(b);
+      const aSymbol = String(a.symbol || "").toLowerCase();
+      const bSymbol = String(b.symbol || "").toLowerCase();
+      const aMatch = aSymbol.indexOf(text) === 0 ? 0 : 1;
+      const bMatch = bSymbol.indexOf(text) === 0 ? 0 : 1;
+      if (aMatch !== bMatch) return aMatch - bMatch;
+      return String(a.displaySymbol || a.symbol).localeCompare(String(b.displaySymbol || b.symbol));
     });
 
-    return filtered.slice(0, 10);
+    return filtered.slice(0, 10).map(instrument => instrument.id);
   }
 
   // 导出配置
@@ -999,6 +1031,7 @@ Item {
       proxyUrl: root.proxyUrl,
       language: root.language
     };
+    config.watchListSchemaVersion = root.watchListSchemaVersion;
     configFile.setText(JSON.stringify(config, null, 2));
   }
 
@@ -1057,10 +1090,10 @@ Item {
     };
 
     if (Array.isArray(config.watchList)) {
-      const coins = normalizeAssetList(config.watchList);
+      const coins = normalizeWatchList(config.watchList);
       if (coins.length > 0) next.watchList = coins;
     }
-    if (typeof config.barCoin === "string" && config.barCoin.trim() !== "") next.barCoin = normalizeAssetKey(config.barCoin);
+    if (typeof config.barCoin === "string" && config.barCoin.trim() !== "") next.barCoin = normalizeWatchReference(config.barCoin);
     if (validModes.includes(config.displayMode)) next.displayMode = config.displayMode;
     if (validPanelPositions.includes(config.panelPosition)) next.panelPosition = config.panelPosition;
     if (typeof config.redRises === "boolean") next.redRises = config.redRises;
@@ -1081,9 +1114,22 @@ Item {
     const previousProxyUrl = root.proxyUrl;
     const previousDataSource = root.dataSource;
     const previousMarketType = root.marketType;
-    const nextWatchList = normalizeAssetList(config.watchList);
+    const nextDataSource = config.dataSource;
+    const nextMarketType = nextDataSource === "coingecko" ? "spot" : (root.marketTypes.includes(config.marketType) ? config.marketType : "spot");
+    const providerChanged = previousDataSource !== nextDataSource || previousMarketType !== nextMarketType;
+    const rawWatchList = Array.isArray(config.watchList) ? config.watchList : root.watchList;
+    const targetPrefix = nextDataSource + ":" + nextMarketType + ":";
+    const nextWatchList = providerChanged
+      ? normalizeWatchList(rawWatchList.map(reference => {
+        const text = String(reference?.id ?? reference ?? "");
+        return text.indexOf(targetPrefix) === 0 ? text : root.getInstrumentSymbol(reference);
+      }))
+      : normalizeWatchList(rawWatchList);
     root.watchList = nextWatchList.length > 0 ? nextWatchList : root.watchList;
-    root.barCoin = normalizeAssetKey(config.barCoin);
+    const rawBarCoin = String(config.barCoin?.id ?? config.barCoin ?? "");
+    root.barCoin = providerChanged
+      ? (rawBarCoin.indexOf(targetPrefix) === 0 ? rawBarCoin : root.getInstrumentSymbol(config.barCoin))
+      : normalizeWatchReference(config.barCoin);
     if (!root.watchList.includes(root.barCoin)) {
       root.barCoin = root.watchList[0];
     }
@@ -1091,37 +1137,63 @@ Item {
     root.panelPosition = config.panelPosition === "click" ? "click" : "center";
     root.redRises = config.redRises;
     root.refreshInterval = Math.max(1, Math.min(60, config.refreshInterval));
-    root.dataSource = config.dataSource;
-    root.marketType = root.dataSource === "coingecko" ? "spot" : (root.marketTypes.includes(config.marketType) ? config.marketType : "spot");
+    root.dataSource = nextDataSource;
+    root.marketType = nextMarketType;
     root.proxyUrl = config.proxyUrl;
     root.language = config.language;
     root.marketData = ({});
+    root.quoteStates = ({});
     root.isLoading = true;
     root.errorMessage = "";
+    root.dataGeneration++;
+    root.quoteQueue = [];
+    root.queuedQuoteIds = ({});
     root.refreshNonce++;
 
-    if (previousProxyUrl !== root.proxyUrl || previousDataSource !== root.dataSource || previousMarketType !== root.marketType) {
+    if (providerChanged) {
+      root.persistResolvedWatchListPending = persist === true;
+      root.instruments = [];
+      root.instrumentById = ({});
+      root.instrumentBySymbol = ({});
+      root.ambiguousSymbols = ({});
+      root.allCoinsList = [];
+      root.catalogReady = false;
+      root.catalogError = "";
+      root.catalogCacheUpdatedAt = 0;
+      root.catalogFromCache = false;
+      root.loadCatalogCache();
+    }
+
+    if (previousProxyUrl !== root.proxyUrl || providerChanged) {
       root.logoFailures = ({});
       root.fetchCoinsList(true);
     }
 
-    if (persist && pluginApi) {
-      pluginApi.pluginSettings.watchList = root.watchList;
-      pluginApi.pluginSettings.barCoin = root.barCoin;
-      pluginApi.pluginSettings.displayMode = root.displayMode;
-      pluginApi.pluginSettings.panelPosition = root.panelPosition;
-      pluginApi.pluginSettings.redRises = root.redRises;
-      pluginApi.pluginSettings.refreshInterval = root.refreshInterval;
-      pluginApi.pluginSettings.dataSource = root.dataSource;
-      pluginApi.pluginSettings.marketType = root.marketType;
-      pluginApi.pluginSettings.proxyUrl = root.proxyUrl;
-      pluginApi.pluginSettings.language = root.language;
-      pluginApi.saveSettings();
+    if (root.catalogReady) root.resolveLegacyWatchList();
+
+    if (persist) {
+      const resolvedSchema = !providerChanged || root.catalogReady;
+      root.persistCurrentSettings(resolvedSchema ? root.watchListSchemaVersion : 1);
+      if (resolvedSchema) root.persistResolvedWatchListPending = false;
     }
 
-    for (let i = 0; i < root.watchList.length; i++) {
-      root.fetchMarketData(root.watchList[i]);
-    }
+    if (!providerChanged) root.refreshMarketData(true);
+  }
+
+  function persistCurrentSettings(schemaVersion) {
+    if (!pluginApi) return;
+    pluginApi.pluginSettings.watchList = root.watchList;
+    pluginApi.pluginSettings.barCoin = root.barCoin;
+    pluginApi.pluginSettings.displayMode = root.displayMode;
+    pluginApi.pluginSettings.panelPosition = root.panelPosition;
+    pluginApi.pluginSettings.redRises = root.redRises;
+    pluginApi.pluginSettings.refreshInterval = root.refreshInterval;
+    pluginApi.pluginSettings.dataSource = root.dataSource;
+    pluginApi.pluginSettings.marketType = root.marketType;
+    pluginApi.pluginSettings.proxyUrl = root.proxyUrl;
+    pluginApi.pluginSettings.language = root.language;
+    pluginApi.pluginSettings.watchListSchemaVersion = schemaVersion;
+    pluginApi.saveSettings();
   }
 
   // 获取币种列表
@@ -1133,57 +1205,131 @@ Item {
     root.coinsListRefetchPending = false;
     const url = getSymbolsUrl();
     if (url === "") {
-      root.allCoinsList = root.commonCoinSymbols;
+      root.catalogError = "unsupported-provider";
       return;
     }
+    const effectiveType = root.dataSource === "coingecko" ? "spot" : root.marketType;
+    root.catalogRequestGeneration = root.dataGeneration;
+    root.catalogRequestProvider = root.dataSource;
+    root.catalogRequestMarketType = effectiveType;
     coinsListProc.command = proxyUrl ? ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", "-x", proxyUrl, url] : ["curl", "-fsSL", "--connect-timeout", "10", "--max-time", "30", url];
     coinsListProc.running = true;
   }
 
   function getSymbolsUrl() {
-    if (root.dataSource === "coingecko") return "";
-    if (root.dataSource === "binance") {
-      return root.marketType === "perpetual"
-        ? "https://fapi.binance.com/fapi/v1/exchangeInfo"
-        : "https://api.binance.com/api/v3/exchangeInfo";
-    }
-    if (root.dataSource === "okx") {
-      return root.marketType === "perpetual"
-        ? "https://www.okx.com/api/v5/public/instruments?instType=SWAP"
-        : "https://www.okx.com/api/v5/public/instruments?instType=SPOT";
-    }
-    if (root.marketType === "perpetual") {
-      return "https://api.hbdm.com/linear-swap-api/v1/swap_contract_info";
-    }
-    return "https://api.huobi.pro/v1/common/symbols";
+    const effectiveType = root.dataSource === "coingecko" ? "spot" : root.marketType;
+    return MarketProviders.instrumentsUrl(root.dataSource, effectiveType);
   }
 
-  function parseSymbolsResponse(response) {
-    const symbols = [];
-    const append = function(symbol) {
-      const key = normalizeAssetKey(symbol);
-      if (key !== "") symbols.push(key);
-    };
+  function parseSymbolsResponse(response, provider, type) {
+    const selectedProvider = provider || root.dataSource;
+    const effectiveType = selectedProvider === "coingecko" ? "spot" : (type || root.marketType);
+    return MarketProviders.parseInstruments(selectedProvider, effectiveType, response);
+  }
 
-    if (root.dataSource === "binance" && Array.isArray(response.symbols)) {
-      response.symbols
-        .filter(symbol => symbol.quoteAsset === "USDT" && symbol.status === "TRADING")
-        .forEach(symbol => append(symbol.baseAsset));
-    } else if (root.dataSource === "okx" && response.code === "0" && Array.isArray(response.data)) {
-      response.data
-        .filter(symbol => symbol.quoteCcy === "USDT" || symbol.settleCcy === "USDT" || String(symbol.instId || "").indexOf("-USDT") !== -1)
-        .forEach(symbol => append(symbol.baseCcy || symbol.instId));
-    } else if (root.dataSource === "huobi" && root.marketType === "perpetual" && response.status === "ok" && Array.isArray(response.data)) {
-      response.data
-        .filter(symbol => symbol.contract_status === 1 || symbol.contract_status === "1" || symbol.contract_status === undefined)
-        .forEach(symbol => append(symbol.symbol || symbol.contract_code));
-    } else if (response.status === "ok" && Array.isArray(response.data)) {
-      response.data
-        .filter(symbol => symbol["quote-currency"] === "usdt" && symbol.state === "online")
-        .forEach(symbol => append(symbol["base-currency"]));
+  function setInstrumentCatalog(nextInstruments, fromCache, cacheUpdatedAt) {
+    if (!Array.isArray(nextInstruments) || nextInstruments.length === 0) return false;
+
+    const byId = {};
+    const bySymbol = {};
+    const ambiguous = {};
+    const ids = [];
+    const effectiveType = root.dataSource === "coingecko" ? "spot" : root.marketType;
+    for (let i = 0; i < nextInstruments.length; i++) {
+      const instrument = nextInstruments[i];
+      if (!instrument || !instrument.id || !instrument.symbol) continue;
+      if (instrument.provider !== root.dataSource || instrument.marketType !== effectiveType) continue;
+      byId[instrument.id] = instrument;
+      if (!bySymbol[instrument.symbol]) {
+        bySymbol[instrument.symbol] = instrument;
+      } else {
+        ambiguous[instrument.symbol] = true;
+      }
+      ids.push(instrument.id);
+    }
+    if (ids.length === 0) return false;
+
+    root.instruments = ids.map(id => byId[id]);
+    root.instrumentById = byId;
+    root.instrumentBySymbol = bySymbol;
+    root.ambiguousSymbols = ambiguous;
+    root.allCoinsList = ids;
+    root.catalogReady = true;
+    root.catalogError = fromCache ? "stale-cache" : "";
+    root.catalogCacheUpdatedAt = fromCache ? Number(cacheUpdatedAt || 0) : Date.now();
+    root.catalogFromCache = fromCache === true;
+    root.errorMessage = "";
+    root.resolveLegacyWatchList();
+    root.refreshNonce++;
+
+    if (root.persistResolvedWatchListPending) {
+      root.persistCurrentSettings(root.watchListSchemaVersion);
+      root.persistResolvedWatchListPending = false;
     }
 
-    return normalizeAssetList(symbols);
+    if (!root.isLoading || root.watchList.length > 0) root.refreshMarketData(false);
+
+    if (!fromCache) root.saveCatalogCache();
+    return true;
+  }
+
+  function resolveLegacyWatchList() {
+    const migrated = [];
+    const seen = {};
+    for (let i = 0; i < root.watchList.length; i++) {
+      const reference = root.watchList[i];
+      const exact = root.instrumentById[String(reference || "")];
+      const key = root.normalizeAssetKey(reference);
+      const instrument = exact || (!root.ambiguousSymbols[key] ? root.instrumentBySymbol[key] : null);
+      const nextReference = instrument ? instrument.id : root.normalizeWatchReference(reference);
+      if (nextReference !== "" && !seen[nextReference]) {
+        seen[nextReference] = true;
+        migrated.push(nextReference);
+      }
+    }
+
+    root.watchList = migrated;
+    const currentBarInstrument = root.getInstrument(root.barCoin);
+    if (currentBarInstrument && root.instrumentById[currentBarInstrument.id]) {
+      root.barCoin = currentBarInstrument.id;
+    } else if (migrated.length > 0) {
+      root.barCoin = migrated[0];
+    }
+  }
+
+  function loadCatalogCache() {
+    if (catalogCacheFile.path !== "") catalogCacheFile.reload();
+  }
+
+  function applyCatalogCache(text) {
+    if (root.catalogReady || !text || String(text).trim() === "") return;
+    try {
+      const cache = JSON.parse(String(text));
+      const effectiveType = root.dataSource === "coingecko" ? "spot" : root.marketType;
+      if (cache.provider !== root.dataSource || cache.marketType !== effectiveType || !Array.isArray(cache.instruments)) return;
+      root.setInstrumentCatalog(cache.instruments, true, cache.updatedAt);
+    } catch (e) {
+      Logger.w("CryptoMarket", "Failed to parse cached instrument catalog: " + e);
+    }
+  }
+
+  function saveCatalogCache() {
+    const effectiveType = root.dataSource === "coingecko" ? "spot" : root.marketType;
+    catalogCacheFile.setText(JSON.stringify({
+      provider: root.dataSource,
+      marketType: effectiveType,
+      updatedAt: Date.now(),
+      instruments: root.instruments
+    }));
+  }
+
+  function setCatalogFailure(code, message) {
+    root.catalogError = code;
+    if (!root.catalogReady) {
+      root.isLoading = false;
+      root.errorMessage = root.tr("panel.catalogError");
+    }
+    Logger.w("CryptoMarket", message);
   }
 
   Process {
@@ -1191,17 +1337,25 @@ Item {
     stdout: StdioCollector {}
     stderr: StdioCollector {}
     onExited: exitCode => {
-      if (exitCode === 0) {
+      const requestIsCurrent = root.catalogRequestGeneration === root.dataGeneration
+        && root.catalogRequestProvider === root.dataSource
+        && root.catalogRequestMarketType === (root.dataSource === "coingecko" ? "spot" : root.marketType);
+      if (!requestIsCurrent) {
+        Logger.d("CryptoMarket", "Discarded obsolete instrument catalog response [" + root.catalogRequestProvider + "/" + root.catalogRequestMarketType + "]");
+      } else if (exitCode === 0) {
         try {
           const text = String(stdout.text);
           const response = JSON.parse(text);
-          const symbols = parseSymbolsResponse(response);
-          root.allCoinsList = symbols.length > 0 ? symbols : root.commonCoinSymbols;
+          const parsedInstruments = parseSymbolsResponse(response, root.catalogRequestProvider, root.catalogRequestMarketType);
+          if (!root.setInstrumentCatalog(parsedInstruments, false)) {
+            root.setCatalogFailure("empty-catalog", "Provider returned no supported instruments for " + root.dataSource + "/" + root.marketType);
+          }
         } catch (e) {
-          Logger.w("CryptoMarket", "Failed to parse coin list: " + e);
+          root.setCatalogFailure("parse-error", "Failed to parse coin list for " + root.dataSource + "/" + root.marketType + ": " + e);
         }
       } else {
-        Logger.w("CryptoMarket", "Failed to fetch coin list: " + String(stderr.text));
+        root.setCatalogFailure("network-error", "Failed to fetch coin list for " + root.dataSource + "/" + root.marketType + ": " + String(stderr.text));
+        root.loadCatalogCache();
       }
       if (root.coinsListRefetchPending) {
         root.fetchCoinsList(false);

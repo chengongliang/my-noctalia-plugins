@@ -2,7 +2,7 @@
 
 A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
 
-![Version](https://img.shields.io/badge/version-1.0.1-blue)
+![Version](https://img.shields.io/badge/version-1.1.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -13,7 +13,9 @@ A real-time market monitoring plugin for Noctalia Shell, displaying live crypto 
 - **Market Panel**: Detailed view of multiple assets with 24h high/low
 - **Display Modes**: Text mode (with asset symbol) or compact mode (price only)
 - **Color Schemes**: Red-rises-green-falls or green-rises-red-falls
-- **Auto Logo Management**: Downloads and caches asset logos from CoinGecko and official company sources
+- **Provider-driven Instruments**: Discovers exact tradable instruments from Huobi, Binance, OKX, and CoinGecko instead of guessing symbols
+- **Reliable Quote Refresh**: Limits concurrent requests, preserves stale values, and rejects responses from an obsolete provider configuration
+- **Auto Logo Management**: Uses instrument metadata first, then exact external matching, an identity-keyed cache, and a text fallback
 - **Language Switcher**: Switch the plugin interface between English and Simplified Chinese
 - **Proxy Support**: Optional HTTP/SOCKS5 proxy configuration
 - **Config Import/Export**: Export and restore your settings with a JSON file
@@ -22,7 +24,7 @@ A real-time market monitoring plugin for Noctalia Shell, displaying live crypto 
 
 1. Copy the plugin to Noctalia plugins directory:
 ```bash
-cp -r crypto-market ~/.config/noctalia/plugins/
+cp -r market-watch ~/.config/noctalia/plugins/
 ```
 
 2. Restart Noctalia Shell or reload the configuration.
@@ -65,27 +67,14 @@ Default settings in `manifest.json`:
   "dataSource": "huobi",
   "marketType": "spot",
   "proxyUrl": "",
-  "language": "en"
+  "language": "en",
+  "watchListSchemaVersion": 2
 }
 ```
 
 ## Supported Assets
 
-Pre-configured assets with logos:
-- **BTC** (Bitcoin)
-- **ETH** (Ethereum)
-- **BNB** (Binance Coin)
-- **SOL** (Solana)
-- **XRP** (Ripple)
-- **ADA** (Cardano)
-- **DOT** (Polkadot)
-- **DOGE** (Dogecoin)
-- **MATIC** (Polygon)
-- **AVAX** (Avalanche)
-- **ZHIPU** (Zhipu AI)
-- **MINIMAX** (MiniMax)
-
-You can add more assets by searching in the settings panel. In perpetual mode, the search list is loaded from the selected exchange when possible. You can also type symbols directly, for example `xau`, `xag`, `aapl`, `msft`, or `nvda`; availability depends on the selected exchange.
+Instruments are discovered from the selected provider catalog. Search results use the provider's exact tradable identifier, so newly listed instruments do not require plugin code changes. Unavailable or ambiguous legacy entries remain visible until you replace or remove them.
 
 ## Data Sources
 
@@ -122,7 +111,8 @@ You can add more assets by searching in the settings panel. In perpetual mode, t
 4. Switch to a different data source
 
 ### Logos not showing
-- Logos are downloaded on first launch
+- Logos are resolved from provider metadata or an exact external match and cached on first use
+- If no trustworthy image is available, the asset symbol is shown as a text fallback
 - Check cache directory: `ls ~/.cache/noctalia/crypto-market/logos/`
 - If behind a firewall, configure proxy URL in settings
 
@@ -140,13 +130,15 @@ You can add more assets by searching in the settings panel. In perpetual mode, t
 
 ### Project Structure
 ```
-crypto-market/
+market-watch/
 ├── Main.qml          # Core data manager, API polling, logo cache
+├── MarketProviders.js # Provider discovery and quote adapters
 ├── BarWidget.qml     # Status bar widget component
 ├── Panel.qml         # Market panel with coin table
 ├── Settings.qml      # Configuration interface
 ├── i18n/             # Plugin translations
-└── manifest.json     # Plugin metadata and defaults
+├── manifest.json     # Plugin metadata and defaults
+└── tests/             # Offline provider parser fixtures
 ```
 
 ### Tech Stack
@@ -188,4 +180,4 @@ chengongliang
 
 ## Version
 
-1.0.1 - Adds logo support for ZHIPU and MINIMAX contracts; requires Noctalia Shell >= 4.6.6
+1.1.0 - Uses provider-driven instrument discovery and exact exchange identifiers across Huobi, Binance, OKX, and CoinGecko; requires Noctalia Shell >= 4.6.6

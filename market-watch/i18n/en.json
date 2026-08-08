@@ -18,6 +18,7 @@
     "settings": "Settings"
   },
   "panel": {
+    "catalogError": "Instrument catalog is unavailable",
     "change": "Change",
     "close": "Close",
     "coin": "Asset",
@@ -71,6 +72,7 @@
     "searchPlaceholder": "Enter an asset symbol to search (for example: btc, xau, aapl)",
     "searchResults": "Search results",
     "seconds": "seconds",
+    "unavailable": "Unavailable from this data source",
     "watchList": "Watch list",
     "watchListTip": "Click an asset to add or remove it, and use arrows to reorder"
   }

@@ -1,0 +1,12 @@
+[
+  {
+    "id": "bitcoin",
+    "symbol": "btc",
+    "name": "Bitcoin"
+  },
+  {
+    "id": "apple",
+    "symbol": "apple",
+    "name": "Apple"
+  }
+]

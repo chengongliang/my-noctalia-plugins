@@ -199,7 +199,7 @@ ColumnLayout {
     Repeater {
       model: getSearchResults()
       delegate: NButton {
-        text: modelData.toUpperCase()
+        text: getCoinName(modelData)
         visible: !root.editWatchList.includes(modelData)
         onClicked: {
           addCoin(modelData);
@@ -325,33 +325,27 @@ ColumnLayout {
 
     const normalizedWatchList = normalizeEditWatchList();
     const normalizedBarCoin = normalizedWatchList.includes(normalizeAsset(root.editBarCoin)) ? normalizeAsset(root.editBarCoin) : normalizedWatchList[0];
-
-    pluginApi.pluginSettings.watchList = normalizedWatchList;
-    pluginApi.pluginSettings.barCoin = normalizedBarCoin;
-    pluginApi.pluginSettings.displayMode = root.editDisplayMode;
-    pluginApi.pluginSettings.panelPosition = root.editPanelPosition === "click" ? "click" : "center";
-    pluginApi.pluginSettings.redRises = root.editRedRises;
-    pluginApi.pluginSettings.refreshInterval = root.editRefreshInterval;
-    pluginApi.pluginSettings.dataSource = root.editDataSource;
-    pluginApi.pluginSettings.marketType = effectiveMarketType();
-    pluginApi.pluginSettings.proxyUrl = root.editProxyUrl;
-    pluginApi.pluginSettings.language = root.editLanguage;
-    pluginApi.saveSettings();
+    const nextConfig = {
+      watchList: normalizedWatchList,
+      barCoin: normalizedBarCoin,
+      displayMode: root.editDisplayMode,
+      panelPosition: root.editPanelPosition === "click" ? "click" : "center",
+      redRises: root.editRedRises,
+      refreshInterval: root.editRefreshInterval,
+      dataSource: root.editDataSource,
+      marketType: effectiveMarketType(),
+      proxyUrl: root.editProxyUrl,
+      language: root.editLanguage
+    };
 
     if (mainInstance) {
-      mainInstance.applyConfig({
-        watchList: normalizedWatchList,
-        barCoin: normalizedBarCoin,
-        displayMode: root.editDisplayMode,
-        panelPosition: root.editPanelPosition === "click" ? "click" : "center",
-        redRises: root.editRedRises,
-        refreshInterval: root.editRefreshInterval,
-        dataSource: root.editDataSource,
-        marketType: effectiveMarketType(),
-        proxyUrl: root.editProxyUrl,
-        language: root.editLanguage
-      }, false);
+      mainInstance.applyConfig(nextConfig, true);
+      return;
     }
+
+    Object.keys(nextConfig).forEach(key => pluginApi.pluginSettings[key] = nextConfig[key]);
+    pluginApi.pluginSettings.watchListSchemaVersion = 1;
+    pluginApi.saveSettings();
   }
 
   function exportConfig() {
@@ -416,12 +410,16 @@ ColumnLayout {
   }
 
   function getCoinName(coin) {
-    if (mainInstance) return mainInstance.getCoinName(coin);
+    if (mainInstance) {
+      const instrument = mainInstance.getInstrument(coin);
+      const name = mainInstance.getCoinName(coin);
+      return instrument?.status === "unresolved" ? name + " (" + tr("settings.unavailable") + ")" : name;
+    }
     return String(coin || "").toUpperCase();
   }
 
   function normalizeAsset(symbol) {
-    return mainInstance ? mainInstance.normalizeAssetKey(symbol) : String(symbol || "").trim().toLowerCase();
+    return mainInstance ? mainInstance.getInstrumentId(symbol) : String(symbol || "").trim().toLowerCase();
   }
 
   function normalizeEditWatchList() {
@@ -445,7 +443,7 @@ ColumnLayout {
     const model = [];
     const seen = {};
     const append = function(symbol) {
-      const key = mainInstance ? mainInstance.normalizeAssetKey(symbol) : String(symbol || "").toLowerCase();
+      const key = normalizeAsset(symbol);
       if (key !== "" && !seen[key]) {
         seen[key] = true;
         model.push({ "key": key, "name": getCoinName(key) });
@@ -453,7 +451,6 @@ ColumnLayout {
     };
 
     root.editWatchList.forEach(append);
-    ["btc", "eth", "bnb", "sol", "xrp"].forEach(append);
     return model;
   }
 

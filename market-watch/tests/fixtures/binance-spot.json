@@ -1,0 +1,16 @@
+{
+  "symbols": [
+    {
+      "symbol": "BTCUSDT",
+      "baseAsset": "BTC",
+      "quoteAsset": "USDT",
+      "status": "TRADING"
+    },
+    {
+      "symbol": "APPLUSDT",
+      "baseAsset": "APPL",
+      "quoteAsset": "USDT",
+      "status": "BREAK"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "status": "ok",
+  "data": [
+    {
+      "contract_code": "AAPL-USDT",
+      "symbol": "AAPL",
+      "contract_name": "AAPL-USDT",
+      "contract_status": 1
+    },
+    {
+      "contract_code": "ACME-USDT",
+      "symbol": "ACME",
+      "contract_name": "ACME-USDT",
+      "contract_status": 1
+    },
+    {
+      "contract_code": "NEWMK-USDT",
+      "symbol": "NEWMK",
+      "contract_name": "NEWMK-USDT",
+      "contract_status": 1
+    }
+  ]
+}

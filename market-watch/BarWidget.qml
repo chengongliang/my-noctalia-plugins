@@ -29,7 +29,7 @@ Item {
   // 强制重新计算 coinData，依赖 tick
   readonly property var coinData: {
     const t = tick;
-    const key = mainInstance?.normalizeAssetKey(barCoin) ?? barCoin;
+    const key = mainInstance?.getInstrumentId(barCoin) ?? barCoin;
     return mainInstance?.marketData[key];
   }
 
@@ -48,7 +48,7 @@ Item {
     icon: ""
     text: {
       const t = tick;
-      const coin = barCoin;
+      const coin = mainInstance?.getInstrumentDisplaySymbol(barCoin) ?? String(barCoin).toUpperCase();
       const mode = displayMode;
       const loading = isLoading;
       const err = errorMsg;
@@ -60,7 +60,7 @@ Item {
       if (!data) return "--";
 
       const price = mainInstance?.formatPrice(data.close) ?? "--";
-      return mode === "text" ? `${coin.toUpperCase()} ${price}` : price;
+      return mode === "text" ? `${coin} ${price}` : price;
     }
     suffix: {
       const t = tick;
@@ -80,7 +80,8 @@ Item {
       if (!data) return root.tr("panel.noData");
       const priceLabel = root.tr("panel.price");
       const changeLabel = root.tr("panel.change");
-      return `${barCoin.toUpperCase()}\n${priceLabel}: ${mainInstance?.formatPrice(data.close)}\n${changeLabel}: ${mainInstance?.formatChange(data.change)}`;
+      const symbol = mainInstance?.getInstrumentDisplaySymbol(barCoin) ?? String(barCoin).toUpperCase();
+      return `${symbol}\n${priceLabel}: ${mainInstance?.formatPrice(data.close)}\n${changeLabel}: ${mainInstance?.formatChange(data.change)}`;
     }
     customBackgroundColor: root.errorMsg ? "#3a3a3a" : "transparent"
     customTextIconColor: root.errorMsg ? "#888888" : "transparent"

@@ -1,0 +1,45 @@
+{
+  "symbols_remaining": 0,
+  "symbols": [
+    {
+      "symbol": "<em>ZHIPU</em>USDT.P",
+      "description": "ZHIPUUSDT Perpetual Contract",
+      "type": "swap",
+      "exchange": "HTX",
+      "currency_code": "USDT",
+      "logoid": "knowledge-atlas-technology-joint-stock-company-limited-class-h"
+    },
+    {
+      "symbol": "<em>ZHIPU</em>USDT.P_PREMIUM",
+      "description": "ZHIPUUSDT Premium Index",
+      "type": "index",
+      "exchange": "HTX",
+      "currency_code": "USDT",
+      "logoid": null
+    },
+    {
+      "symbol": "100",
+      "description": "<em>MINIMAX</em> GROUP INC",
+      "type": "stock",
+      "exchange": "HKEX",
+      "currency_code": "HKD",
+      "logoid": "minimax"
+    },
+    {
+      "symbol": "<em>MINIMAX</em>USDT.P",
+      "description": "MINIMAXUSDT Perpetual Swap Contract",
+      "type": "swap",
+      "exchange": "OKX",
+      "currency_code": "USDT",
+      "logoid": "minimax"
+    },
+    {
+      "symbol": "1000",
+      "description": "UNRELATED MATCH",
+      "type": "stock",
+      "exchange": "HKEX",
+      "currency_code": "HKD",
+      "logoid": "unrelated"
+    }
+  ]
+}

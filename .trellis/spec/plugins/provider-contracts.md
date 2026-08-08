@@ -67,9 +67,60 @@ the generation and discards old responses.
 
 ## Logos
 
-Logo lookup is independent of quote success. Resolve instrument metadata first,
-then stable data overrides, exact-match external metadata, a validated cached
-file, and finally the text/emoji fallback. Keep bundled ZHIPU and MINIMAX files
-in `market-watch/assets/` and key their overrides by
-`huobi:perpetual:ZHIPU-USDT` and `huobi:perpetual:MINIMAX-USDT`, not by a bare
-symbol.
+### 1. Scope / Trigger
+
+Apply this contract whenever catalog metadata, logo lookup, cache behavior, or
+the panel fallback changes. Logo lookup is independent of quote success and
+must work for any normalized instrument without a code change.
+
+### 2. Signatures
+
+- `requestLogo(reference)` starts best-effort resolution for a normalized ID.
+- `getLogoCacheKey(reference)` derives a filesystem-safe key from the full ID.
+- `getLogoPath(reference)` returns a validated cached path or an empty string.
+- `getCoinIcon(reference)` returns a short label derived from `symbol`.
+
+### 3. Contracts
+
+Resolution order is `instrument.logoUrl`, exact external metadata, validated
+cache keyed by stable instrument identity, then text fallback. External matches
+must use an exact provider ID or one unique normalized symbol match. Downloads
+go to a temporary file and are accepted only when non-empty with an `image/*`
+MIME type. Do not add symbol-specific URLs, names, glyphs, or bundled-file
+branches.
+
+### 4. Validation & Error Matrix
+
+| Condition | Result |
+| --- | --- |
+| Provider logo succeeds | Cache by full instrument ID and render it |
+| Provider logo fails | Continue to exact external lookup |
+| External match is missing or ambiguous | Record retry time and render text |
+| Download is empty or not an image | Reject it and render text |
+| Quote request fails | Leave logo resolution unchanged |
+
+### 5. Good / Base / Bad Cases
+
+- Good: a catalog record has `logoUrl`; the validated file is cached under its
+  provider, market, and exact exchange identity.
+- Base: metadata has no logo; one exact external symbol match is cached.
+- Bad: several external results share a symbol; none is guessed and the panel
+  renders the normalized symbol abbreviation.
+
+### 6. Tests Required
+
+- Assert cache keys differ for the same symbol across provider or market IDs.
+- Exercise metadata success, exact external success, ambiguous miss, invalid
+  MIME, cached hit, and quote failure while the logo remains available.
+- Search runtime code and docs for symbol-specific logo maps before release.
+
+### 7. Wrong vs Correct
+
+```js
+// Wrong: every newly listed instrument requires another branch.
+const logoUrl = symbol === "example" ? "https://vendor/logo.png" : "";
+
+// Correct: consume normalized metadata and fall back generically.
+const logoUrl = instrument.logoUrl || exactExternalMatch(instrument);
+const fallback = instrument.symbol.slice(0, 2).toUpperCase();
+```

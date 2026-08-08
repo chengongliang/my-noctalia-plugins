@@ -33,16 +33,22 @@ Item {
     const rows = [];
 
     for (let i = 0; i < watchList.length; i++) {
-      const coin = watchList[i];
-      const key = mainInstance?.normalizeAssetKey(coin) ?? coin;
+      const reference = watchList[i];
+      const instrument = mainInstance?.getInstrument(reference);
+      const key = mainInstance?.getInstrumentId(reference) ?? reference;
       const data = mainInstance?.marketData[key];
+      const quoteState = mainInstance?.quoteStates[key];
       rows.push({
-        coin: key,
+        reference: reference,
+        coin: mainInstance?.getInstrumentDisplaySymbol(reference) ?? String(reference).toUpperCase(),
+        name: mainInstance?.getInstrumentName(reference) ?? String(reference).toUpperCase(),
+        available: instrument?.status !== "unresolved",
         price: mainInstance?.formatPrice(data?.close) ?? "--",
         change: mainInstance?.formatChange(data?.change) ?? "--",
         high: mainInstance?.formatPrice(data?.high) ?? "--",
         low: mainInstance?.formatPrice(data?.low) ?? "--",
-        color: mainInstance?.getPriceColor(coin) ?? Color.mOnSurface
+        status: quoteState?.status ?? "loading",
+        color: mainInstance?.getPriceColor(reference) ?? Color.mOnSurface
       });
     }
 
@@ -233,7 +239,7 @@ Item {
                 spacing: Style.marginM
 
                 Component.onCompleted: {
-                  mainInstance?.requestLogo(modelData.coin);
+                  mainInstance?.requestLogo(modelData.reference);
                 }
 
                 Item {
@@ -245,7 +251,7 @@ Item {
                     anchors.centerIn: parent
                     width: 24 * Style.uiScaleRatio
                     height: 24 * Style.uiScaleRatio
-                    source: mainInstance?.getLogoPath(modelData.coin) ?? ""
+                    source: mainInstance?.getLogoPath(modelData.reference) ?? ""
                     fillMode: Image.PreserveAspectFit
                     asynchronous: true
                     cache: true
@@ -266,14 +272,16 @@ Item {
                   NText {
                     anchors.centerIn: parent
                     visible: coinLogoImage.source === "" || coinLogoImage.status === Image.Error
-                    text: mainInstance?.getCoinIcon(modelData.coin) ?? "🔸"
+                    text: mainInstance?.getCoinIcon(modelData.reference) ?? "🔸"
                     pointSize: Style.fontSizeL
                   }
                 }
 
                 NText {
                   Layout.preferredWidth: 80 * Style.uiScaleRatio
-                  text: modelData.coin.toUpperCase()
+                  text: modelData.coin
+                  elide: Text.ElideRight
+                  horizontalAlignment: Text.AlignLeft
                   pointSize: Style.fontSizeM
                   font.weight: Style.fontWeightMedium
                   color: Color.mOnSurface
@@ -283,7 +291,7 @@ Item {
                   Layout.preferredWidth: 140 * Style.uiScaleRatio
                   text: modelData.price
                   pointSize: Style.fontSizeM
-                  color: modelData.color
+                  color: modelData.status === "stale" ? Color.mOnSurfaceVariant : modelData.color
                 }
 
                 NText {

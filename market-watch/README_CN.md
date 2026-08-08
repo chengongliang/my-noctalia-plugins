@@ -2,7 +2,7 @@
 
 Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货币现货价格和已上线的 USDT 永续合约价格。
 
-![版本](https://img.shields.io/badge/版本-1.0.1-blue)
+![版本](https://img.shields.io/badge/版本-1.1.0-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 
 ## 功能特性
@@ -13,7 +13,9 @@ Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货�
 - **行情面板**：详细显示多个资产及 24 小时最高/最低价
 - **显示模式**：文字模式（带资产符号）或简洁模式（仅价格）
 - **配色方案**：红涨绿跌或绿涨红跌
-- **自动 Logo 管理**：从 CoinGecko 和企业官方来源下载并缓存资产 Logo
+- **数据源驱动资产**：从火币、币安、OKX 和 CoinGecko 动态发现精确可交易标的，不再猜测交易代码
+- **可靠行情刷新**：限制并发请求，保留过期行情，并丢弃切换数据源前的旧响应
+- **自动 Logo 管理**：优先使用标的元数据，再进行精确外部匹配、按标的身份缓存，并在无可靠图片时显示文字缩写
 - **语言切换**：在英文和简体中文之间切换插件界面
 - **代理支持**：可选的 HTTP/SOCKS5 代理配置
 - **配置导入导出**：通过 JSON 文件导出和恢复设置
@@ -22,7 +24,7 @@ Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货�
 
 1. 复制插件到 Noctalia 插件目录：
 ```bash
-cp -r crypto-market ~/.config/noctalia/plugins/
+cp -r market-watch ~/.config/noctalia/plugins/
 ```
 
 2. 重启 Noctalia Shell 或重新加载配置。
@@ -65,27 +67,14 @@ cp -r crypto-market ~/.config/noctalia/plugins/
   "dataSource": "huobi",
   "marketType": "spot",
   "proxyUrl": "",
-  "language": "en"
+  "language": "en",
+  "watchListSchemaVersion": 2
 }
 ```
 
 ## 支持的资产
 
-预配置带 Logo 的资产：
-- **BTC** (比特币)
-- **ETH** (以太坊)
-- **BNB** (币安币)
-- **SOL** (Solana)
-- **XRP** (瑞波币)
-- **ADA** (艾达币)
-- **DOT** (波卡)
-- **DOGE** (狗狗币)
-- **MATIC** (Polygon)
-- **AVAX** (雪崩)
-- **ZHIPU** (智谱 AI)
-- **MINIMAX** (MiniMax)
-
-您可以在设置面板中搜索添加更多资产。永续合约模式下，插件会尽量从所选交易所加载可交易列表。也可以直接输入代码，例如 `xau`、`xag`、`aapl`、`msft`、`nvda`；是否有数据取决于所选交易所是否上线该合约。
+可用标的从当前所选数据源的目录动态发现。搜索结果使用数据源提供的精确交易代码，因此新增标的不需要修改插件代码。旧配置中不可用或有歧义的标的会保留并提示替换或移除。
 
 ## 数据源
 
@@ -122,7 +111,8 @@ cp -r crypto-market ~/.config/noctalia/plugins/
 4. 切换到其他数据源
 
 ### Logo 不显示
-- Logo 在首次启动时下载
+- Logo 会优先从数据源元数据或精确外部匹配中解析，并在首次使用时缓存
+- 如果没有可靠图片，界面会显示资产代码的文字缩写
 - 检查缓存目录：`ls ~/.cache/noctalia/crypto-market/logos/`
 - 如果在防火墙后面，在设置中配置代理地址
 
@@ -140,13 +130,15 @@ cp -r crypto-market ~/.config/noctalia/plugins/
 
 ### 项目结构
 ```
-crypto-market/
+market-watch/
 ├── Main.qml          # 核心数据管理器，API 轮询，Logo 缓存
+├── MarketProviders.js # 数据源发现和报价适配器
 ├── BarWidget.qml     # 状态栏小部件组件
 ├── Panel.qml         # 行情面板及币种表格
 ├── Settings.qml      # 配置界面
 ├── i18n/             # 插件翻译
-└── manifest.json     # 插件元数据和默认值
+├── manifest.json     # 插件元数据和默认值
+└── tests/             # 离线数据源解析 fixtures
 ```
 
 ### 技术栈
@@ -188,4 +180,4 @@ chengongliang
 
 ## 版本
 
-1.0.1 - 新增 ZHIPU 和 MINIMAX 合约 Logo 支持，需要 Noctalia Shell >= 4.6.6
+1.1.0 - 使用数据源驱动的资产发现和精确交易代码，覆盖火币、币安、OKX 和 CoinGecko，需要 Noctalia Shell >= 4.6.6

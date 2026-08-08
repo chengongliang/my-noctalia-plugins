@@ -1,0 +1,9 @@
+{
+  "bitcoin": {
+    "usd": 105.0,
+    "usd_24h_change": 5.0,
+    "usd_24h_high": 110.0,
+    "usd_24h_low": 98.0,
+    "usd_24h_vol": 1234.0
+  }
+}

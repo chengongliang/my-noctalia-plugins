@@ -1,7 +1,7 @@
 {
   "id": "market-watch",
   "name": "Market Watch",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "minNoctaliaVersion": "4.6.6",
   "author": "chengongliang",
   "license": "MIT",
@@ -28,7 +28,8 @@
       "dataSource": "huobi",
       "marketType": "spot",
       "proxyUrl": "",
-      "language": "en"
+      "language": "en",
+      "watchListSchemaVersion": 2
     }
   }
 }
