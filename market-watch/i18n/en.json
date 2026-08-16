@@ -35,8 +35,11 @@
     "title": "Market Watch"
   },
   "settings": {
-    "barCoin": "Status bar asset",
-    "barCoinDesc": "Select the asset to display in the status bar",
+    "barAssets": "Status bar assets",
+    "barAssetsTip": "Use the pin button in the list above to show an asset in the status bar. Two or more assets scroll automatically.",
+    "barAssetsToggle": "Show in status bar",
+    "barScrollInterval": "Status bar switch interval",
+    "barScrollIntervalDesc": "How long each asset stays visible (2-60 seconds)",
     "colorScheme": "Color scheme",
     "colorSchemeDesc": "Select the color scheme for price changes",
     "configExported": "Configuration exported to ~/Downloads/crypto-market-config.json",

@@ -44,10 +44,11 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **数据源**：在火币、币安、OKX、CoinGecko 之间选择
 - **代理地址**：可选的 HTTP/SOCKS5 代理（格式：`http://host:port` 或 `socks5://host:port`）
 - **市场类型**：为火币、币安、OKX 选择现货或永续合约
-- **状态栏显示资产**：选择在状态栏显示哪个资产
+- **状态栏轮播资产**：将一个或多个自选资产固定到状态栏。只有一个时静态显示，两个及以上会上下滚动切换
+- **状态栏切换间隔**：每个资产滚动到下一个之前的停留时长（2–60 秒），与行情刷新频率互不影响
 - **显示模式**：完整模式（带符号）或简洁模式（仅价格）
 - **面板位置**：选择行情面板中间弹出或在点击的状态栏小部件附近弹出
-- **自选资产列表**：点击添加/移除资产，使用箭头按钮调整顺序
+- **自选资产列表**：点击添加/移除资产，使用箭头按钮调整顺序，使用图钉按钮固定到状态栏
 - **涨跌配色**：红涨绿跌（中国风格）或绿涨红跌（西方风格）
 - **刷新频率**：设置更新间隔，1 到 60 秒
 - **界面语言**：在英文和简体中文之间切换插件界面
@@ -59,7 +60,9 @@ cp -r market-watch ~/.config/noctalia/plugins/
 ```json
 {
   "watchList": ["btc", "eth", "bnb", "sol", "xrp"],
+  "barWatchList": ["btc"],
   "barCoin": "btc",
+  "barScrollInterval": 5,
   "displayMode": "text",
   "panelPosition": "center",
   "redRises": false,

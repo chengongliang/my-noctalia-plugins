@@ -1,7 +1,7 @@
 {
   "id": "market-watch",
   "name": "Market Watch",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "minNoctaliaVersion": "4.6.6",
   "author": "chengongliang",
   "license": "MIT",
@@ -20,7 +20,9 @@
   "metadata": {
     "defaultSettings": {
       "watchList": ["btc", "eth", "bnb", "sol", "xrp"],
+      "barWatchList": ["btc"],
       "barCoin": "btc",
+      "barScrollInterval": 5,
       "displayMode": "text",
       "panelPosition": "center",
       "redRises": false,

@@ -15,7 +15,11 @@ Item {
   readonly property int watchListSchemaVersion: 2
 
   property var watchList: cfg.watchList ?? defaults.watchList ?? ["btc", "eth", "bnb", "sol", "xrp"]
+  // 状态栏轮播资产：watchList 的子集，顺序由 watchList 决定，Component.onCompleted 中播种。
+  // barCoin 降级为派生兼容字段，始终等于 barWatchList[0]，仅供导入导出和旧版本回滚使用。
   property string barCoin: cfg.barCoin ?? defaults.barCoin ?? "btc"
+  property var barWatchList: []
+  property int barScrollInterval: Math.max(2, Math.min(60, cfg.barScrollInterval ?? defaults.barScrollInterval ?? 5))
   property bool redRises: cfg.redRises ?? defaults.redRises ?? false
   property int refreshInterval: Math.max(1, Math.min(60, cfg.refreshInterval ?? defaults.refreshInterval ?? 5))
   property string displayMode: cfg.displayMode ?? defaults.displayMode ?? "text"  // "text" or "compact"
@@ -61,8 +65,11 @@ Item {
         "title": "Market Watch"
       },
       "settings": {
-        "barCoin": "Status bar asset",
-        "barCoinDesc": "Select the asset to display in the status bar",
+        "barAssets": "Status bar assets",
+        "barAssetsTip": "Use the pin button in the list above to show an asset in the status bar. Two or more assets scroll automatically.",
+        "barAssetsToggle": "Show in status bar",
+        "barScrollInterval": "Status bar switch interval",
+        "barScrollIntervalDesc": "How long each asset stays visible (2-60 seconds)",
         "colorScheme": "Color scheme",
         "colorSchemeDesc": "Select the color scheme for price changes",
         "configExported": "Configuration exported to ~/Downloads/crypto-market-config.json",
@@ -137,8 +144,11 @@ Item {
         "title": "市场行情"
       },
       "settings": {
-        "barCoin": "状态栏显示资产",
-        "barCoinDesc": "选择在状态栏显示的资产",
+        "barAssets": "状态栏轮播资产",
+        "barAssetsTip": "用上方列表中的图钉按钮把资产固定到状态栏。两个及以上会自动滚动切换。",
+        "barAssetsToggle": "在状态栏显示",
+        "barScrollInterval": "状态栏切换间隔",
+        "barScrollIntervalDesc": "每个资产的停留时长（2–60 秒）",
         "colorScheme": "涨跌配色",
         "colorSchemeDesc": "选择涨跌颜色方案",
         "configExported": "配置已导出到 ~/Downloads/crypto-market-config.json",
@@ -228,10 +238,8 @@ Item {
 
   Component.onCompleted: {
     watchList = normalizeWatchList(watchList);
-    barCoin = normalizeWatchReference(barCoin);
-    if (!watchList.includes(barCoin)) {
-      barCoin = watchList.length > 0 ? watchList[0] : "btc";
-    }
+    barWatchList = normalizeBarWatchList(seedBarWatchList());
+    syncBarCoin();
     if (dataSource === "coingecko" || !marketTypes.includes(marketType)) {
       marketType = "spot";
     }
@@ -375,6 +383,36 @@ Item {
       }
     }
     return result;
+  }
+
+  // 升级播种：有新字段用新字段；否则从旧 barCoin 播种，保证升级后状态栏显示的资产不变。
+  function seedBarWatchList() {
+    if (Array.isArray(cfg.barWatchList)) return cfg.barWatchList;
+    if (typeof cfg.barCoin === "string" && cfg.barCoin.trim() !== "") return [cfg.barCoin];
+    if (Array.isArray(defaults.barWatchList)) return defaults.barWatchList;
+    return [defaults.barCoin ?? "btc"];
+  }
+
+  // barWatchList 的唯一规范化入口：去重、约束为 scope（默认 watchList）的子集、按 scope 排序、非空回退。
+  // 所有写入 barWatchList 的路径都必须经过这里。导入配置时 root.watchList 尚未更新，
+  // 需显式传入待生效的 watchList 作为 scope，否则会被旧列表误过滤为空。
+  function normalizeBarWatchList(assets, scope) {
+    const source = Array.isArray(scope) ? scope : root.watchList;
+    const requested = {};
+    const raw = Array.isArray(assets) ? assets : [];
+
+    for (let i = 0; i < raw.length; i++) {
+      const reference = normalizeWatchReference(raw[i]);
+      if (reference !== "") requested[reference] = true;
+    }
+
+    const result = source.filter(reference => requested[reference] === true);
+    if (result.length > 0) return result;
+    return source.length > 0 ? [source[0]] : [];
+  }
+
+  function syncBarCoin() {
+    root.barCoin = root.barWatchList.length > 0 ? root.barWatchList[0] : "";
   }
 
   function getInstrument(reference) {
@@ -1021,7 +1059,9 @@ Item {
   function exportConfig() {
     const config = {
       watchList: root.watchList,
+      barWatchList: root.barWatchList,
       barCoin: root.barCoin,
+      barScrollInterval: root.barScrollInterval,
       displayMode: root.displayMode,
       panelPosition: root.panelPosition,
       redRises: root.redRises,
@@ -1078,7 +1118,9 @@ Item {
     const validMarketTypes = root.marketTypes;
     const next = {
       watchList: root.watchList,
+      barWatchList: root.barWatchList,
       barCoin: root.barCoin,
+      barScrollInterval: root.barScrollInterval,
       displayMode: root.displayMode,
       panelPosition: root.panelPosition,
       redRises: root.redRises,
@@ -1093,7 +1135,9 @@ Item {
       const coins = normalizeWatchList(config.watchList);
       if (coins.length > 0) next.watchList = coins;
     }
+    if (Array.isArray(config.barWatchList)) next.barWatchList = config.barWatchList;
     if (typeof config.barCoin === "string" && config.barCoin.trim() !== "") next.barCoin = normalizeWatchReference(config.barCoin);
+    if (typeof config.barScrollInterval === "number") next.barScrollInterval = Math.max(2, Math.min(60, Math.round(config.barScrollInterval)));
     if (validModes.includes(config.displayMode)) next.displayMode = config.displayMode;
     if (validPanelPositions.includes(config.panelPosition)) next.panelPosition = config.panelPosition;
     if (typeof config.redRises === "boolean") next.redRises = config.redRises;
@@ -1103,9 +1147,13 @@ Item {
     if (typeof config.proxyUrl === "string") next.proxyUrl = config.proxyUrl;
     if (validLanguages.includes(config.language)) next.language = config.language === "zh" ? "zh-CN" : config.language;
 
-    if (!next.watchList.includes(next.barCoin)) {
-      next.barCoin = next.watchList[0];
-    }
+    // 只有当导入的配置确实带了旧 barCoin 而没有 barWatchList 时才用它播种。
+    // 两个字段都缺失时必须保留 next.barWatchList 的初值（当前运行值），
+    // 否则一份不含状态栏字段的配置会把多资产轮播列表压缩成单条。
+    const hasLegacyBarCoin = typeof config.barCoin === "string" && config.barCoin.trim() !== "";
+    if (!Array.isArray(config.barWatchList) && hasLegacyBarCoin) next.barWatchList = [next.barCoin];
+    next.barWatchList = normalizeBarWatchList(next.barWatchList, next.watchList);
+    next.barCoin = next.barWatchList.length > 0 ? next.barWatchList[0] : "";
 
     return next;
   }
@@ -1119,20 +1167,24 @@ Item {
     const providerChanged = previousDataSource !== nextDataSource || previousMarketType !== nextMarketType;
     const rawWatchList = Array.isArray(config.watchList) ? config.watchList : root.watchList;
     const targetPrefix = nextDataSource + ":" + nextMarketType + ":";
+    const remapReference = function(reference) {
+      const text = String(reference?.id ?? reference ?? "");
+      if (!providerChanged) return normalizeWatchReference(reference);
+      return text.indexOf(targetPrefix) === 0 ? text : root.getInstrumentSymbol(reference);
+    };
     const nextWatchList = providerChanged
-      ? normalizeWatchList(rawWatchList.map(reference => {
-        const text = String(reference?.id ?? reference ?? "");
-        return text.indexOf(targetPrefix) === 0 ? text : root.getInstrumentSymbol(reference);
-      }))
+      ? normalizeWatchList(rawWatchList.map(remapReference))
       : normalizeWatchList(rawWatchList);
     root.watchList = nextWatchList.length > 0 ? nextWatchList : root.watchList;
-    const rawBarCoin = String(config.barCoin?.id ?? config.barCoin ?? "");
-    root.barCoin = providerChanged
-      ? (rawBarCoin.indexOf(targetPrefix) === 0 ? rawBarCoin : root.getInstrumentSymbol(config.barCoin))
-      : normalizeWatchReference(config.barCoin);
-    if (!root.watchList.includes(root.barCoin)) {
-      root.barCoin = root.watchList[0];
-    }
+    // 顺序要求：先定 watchList，再规范化 barWatchList，最后派生 barCoin。
+    // 与 normalizeImportedConfig 同一套优先级：新字段 > 旧 barCoin > 保留当前值。
+    const hasLegacyBarCoin = typeof config.barCoin === "string" && config.barCoin.trim() !== "";
+    const rawBarWatchList = Array.isArray(config.barWatchList)
+      ? config.barWatchList
+      : (hasLegacyBarCoin ? [config.barCoin] : root.barWatchList);
+    root.barWatchList = normalizeBarWatchList(rawBarWatchList.map(remapReference));
+    root.syncBarCoin();
+    root.barScrollInterval = Math.max(2, Math.min(60, config.barScrollInterval ?? root.barScrollInterval));
     root.displayMode = config.displayMode;
     root.panelPosition = config.panelPosition === "click" ? "click" : "center";
     root.redRises = config.redRises;
@@ -1183,7 +1235,9 @@ Item {
   function persistCurrentSettings(schemaVersion) {
     if (!pluginApi) return;
     pluginApi.pluginSettings.watchList = root.watchList;
+    pluginApi.pluginSettings.barWatchList = root.barWatchList;
     pluginApi.pluginSettings.barCoin = root.barCoin;
+    pluginApi.pluginSettings.barScrollInterval = root.barScrollInterval;
     pluginApi.pluginSettings.displayMode = root.displayMode;
     pluginApi.pluginSettings.panelPosition = root.panelPosition;
     pluginApi.pluginSettings.redRises = root.redRises;
@@ -1276,12 +1330,14 @@ Item {
   function resolveLegacyWatchList() {
     const migrated = [];
     const seen = {};
+    const refMap = {};
     for (let i = 0; i < root.watchList.length; i++) {
       const reference = root.watchList[i];
       const exact = root.instrumentById[String(reference || "")];
       const key = root.normalizeAssetKey(reference);
       const instrument = exact || (!root.ambiguousSymbols[key] ? root.instrumentBySymbol[key] : null);
       const nextReference = instrument ? instrument.id : root.normalizeWatchReference(reference);
+      refMap[String(reference || "")] = nextReference;
       if (nextReference !== "" && !seen[nextReference]) {
         seen[nextReference] = true;
         migrated.push(nextReference);
@@ -1289,12 +1345,12 @@ Item {
     }
 
     root.watchList = migrated;
-    const currentBarInstrument = root.getInstrument(root.barCoin);
-    if (currentBarInstrument && root.instrumentById[currentBarInstrument.id]) {
-      root.barCoin = currentBarInstrument.id;
-    } else if (migrated.length > 0) {
-      root.barCoin = migrated[0];
-    }
+    // watchList 迁移后引用可能改写，barWatchList 必须走同一张映射表再规范化。
+    root.barWatchList = root.normalizeBarWatchList(root.barWatchList.map(function(reference) {
+      const mapped = refMap[String(reference || "")];
+      return mapped !== undefined ? mapped : reference;
+    }));
+    root.syncBarCoin();
   }
 
   function loadCatalogCache() {

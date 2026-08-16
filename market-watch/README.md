@@ -44,10 +44,11 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **Data Source**: Choose between Huobi, Binance, OKX, or CoinGecko
 - **Proxy URL**: Optional HTTP/SOCKS5 proxy (format: `http://host:port` or `socks5://host:port`)
 - **Market Type**: Choose spot or perpetual futures for Huobi, Binance, and OKX
-- **Status Bar Asset**: Select which asset to display in the status bar
+- **Status Bar Assets**: Pin one or more watch list assets to the status bar. A single asset stays static; two or more scroll vertically
+- **Status Bar Switch Interval**: How long each asset stays visible before scrolling to the next (2-60 seconds). Independent of the data refresh interval
 - **Display Mode**: Full mode (with symbol) or compact mode (price only)
 - **Panel Position**: Open the market panel centered or near the clicked bar widget
-- **Watch List**: Add/remove assets by clicking, reorder with arrow buttons
+- **Watch List**: Add/remove assets by clicking, reorder with arrow buttons, pin to the status bar with the pin button
 - **Color Scheme**: Red rises (Chinese style) or green rises (Western style)
 - **Refresh Interval**: Set update frequency from 1 to 60 seconds
 - **Language**: Switch the plugin interface between English and Simplified Chinese
@@ -59,7 +60,9 @@ Default settings in `manifest.json`:
 ```json
 {
   "watchList": ["btc", "eth", "bnb", "sol", "xrp"],
+  "barWatchList": ["btc"],
   "barCoin": "btc",
+  "barScrollInterval": 5,
   "displayMode": "text",
   "panelPosition": "center",
   "redRises": false,

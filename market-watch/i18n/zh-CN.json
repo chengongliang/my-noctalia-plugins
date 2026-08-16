@@ -35,8 +35,11 @@
     "title": "市场行情"
   },
   "settings": {
-    "barCoin": "状态栏显示资产",
-    "barCoinDesc": "选择在状态栏显示的资产",
+    "barAssets": "状态栏轮播资产",
+    "barAssetsTip": "用上方列表中的图钉按钮把资产固定到状态栏。两个及以上会自动滚动切换。",
+    "barAssetsToggle": "在状态栏显示",
+    "barScrollInterval": "状态栏切换间隔",
+    "barScrollIntervalDesc": "每个资产的停留时长（2–60 秒）",
     "colorScheme": "涨跌配色",
     "colorSchemeDesc": "选择涨跌颜色方案",
     "configExported": "配置已导出到 ~/Downloads/crypto-market-config.json",
