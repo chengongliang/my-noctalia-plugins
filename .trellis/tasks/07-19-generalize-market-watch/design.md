@@ -12,6 +12,11 @@ Suggested modules:
 - `LogoResolver.js`: provider/asset metadata resolution and cache handling.
 - `Main.qml`: plugin settings, lifecycle wiring, shared properties, IPC, and calls into the modules.
 
+Alert rules extend the same shared-state boundary. `Main.qml` owns normalized
+alert settings, rolling quote samples, crossing/cooldown state, and notification
+delivery. A small `AlertEngine.js` module owns the pure price-boundary and
+rapid-move evaluation contract so the edge cases can be tested without QML.
+
 Do not split modules solely for file size. Each module must own one cross-layer contract so Panel.qml and Settings.qml do not reparse untyped provider payloads.
 
 ## Normalized Instrument Contract
@@ -92,6 +97,49 @@ Resolve in this order:
 4. Text fallback derived from the normalized symbol.
 
 Download to a temporary path, validate a non-empty supported image, then atomically move it into a cache key based on the instrument ID. Logo resolution must not contain symbol-specific URLs, names, glyphs, or bundled-file branches.
+
+## Alert Contracts
+
+Per-instrument price rules are persisted as a map keyed by the full instrument
+ID. Each value has optional positive `upperPrice` and `lowerPrice` fields plus
+an `enabled` flag:
+
+```js
+{
+  "huobi:perpetual:BTC-USDT": {
+    enabled: true,
+    upperPrice: 70000,
+    lowerPrice: 50000
+  }
+}
+```
+
+The alert engine tracks whether each boundary is already triggered. The first
+valid quote only establishes that state; a notification occurs when a later
+quote crosses into the boundary. Moving back outside re-arms that boundary.
+Unresolved IDs have no quote and therefore cannot notify.
+
+The global rapid rule is:
+
+```js
+{
+  enabled: false,
+  thresholdPercent: 5,
+  windowMinutes: 5,
+  cooldownMinutes: 30,
+  instrumentIds: []
+}
+```
+
+Only selected IDs are sampled. A rolling window compares the newest valid
+price with the oldest sample still inside the window. Each direction has its
+own armed/cooldown state, and the first sample establishes a baseline without
+notifying. Provider/market generation changes clear all in-memory alert state
+and history while leaving persisted rules untouched.
+
+Notifications use `ToastService.showNotice` with translated title/body keys;
+the body is assembled only after a verified fresh quote and includes the exact
+instrument display symbol and formatted value/change.
 
 ## Trade-offs
 

@@ -31,6 +31,7 @@ on the bridge host, connect through the documented SSH tunnel, and check
 ```bash
 jq empty market-watch/manifest.json hermes-agent/manifest.json registry.json
 node market-watch/tests/MarketProviders.test.js
+node market-watch/tests/AlertEngine.test.js
 git diff --check
 ```
 

@@ -2,6 +2,8 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import qs.Commons
+import qs.Services.UI
+import "AlertEngine.js" as AlertEngine
 import "MarketProviders.js" as MarketProviders
 
 Item {
@@ -24,6 +26,8 @@ Item {
   property string marketType: cfg.marketType ?? defaults.marketType ?? "spot"
   property string proxyUrl: cfg.proxyUrl ?? defaults.proxyUrl ?? ""
   property string language: cfg.language ?? defaults.language ?? "en"
+  property var priceAlerts: AlertEngine.normalizePriceAlerts(cfg.priceAlerts ?? defaults.priceAlerts ?? ({}))
+  property var rapidAlert: AlertEngine.normalizeRapidAlert(cfg.rapidAlert ?? defaults.rapidAlert ?? ({}))
   readonly property var marketTypes: ["spot", "perpetual"]
   readonly property string configPath: Quickshell.env("HOME") + "/Downloads/crypto-market-config.json"
   property var translations: ({
@@ -42,6 +46,14 @@ Item {
       "marketType": {
         "perpetual": "Perpetual futures",
         "spot": "Spot"
+      },
+      "notifications": {
+        "priceAlertTitle": "Price alert",
+        "rapidAlertTitle": "Rapid move alert",
+        "priceUpper": "{symbol} reached the upper price {threshold} (current {price})",
+        "priceLower": "{symbol} reached the lower price {threshold} (current {price})",
+        "rapidRise": "{symbol} rose {change} in {window} minutes",
+        "rapidFall": "{symbol} fell {change} in {window} minutes"
       },
       "panel": {
         "catalogError": "Instrument catalog is unavailable",
@@ -100,7 +112,22 @@ Item {
         "seconds": "seconds",
         "unavailable": "Unavailable from this data source",
         "watchList": "Watch list",
-        "watchListTip": "Click an asset to add or remove it, and use arrows to reorder"
+        "watchListTip": "Click an asset to add or remove it, and use arrows to reorder",
+        "priceAlerts": "Per-asset price alerts",
+        "priceAlertsDesc": "Set optional upper and lower prices for each monitored asset",
+        "priceAlertEnabled": "Price alert",
+        "upperPrice": "Upper price",
+        "lowerPrice": "Lower price",
+        "invalidPriceRange": "The lower price must be less than the upper price",
+        "pricePlaceholder": "Disabled",
+        "rapidAlert": "Rapid rise/fall alert",
+        "rapidAlertDesc": "Notify when a selected asset moves quickly within the configured window",
+        "rapidThreshold": "Move threshold",
+        "rapidWindow": "Observation window",
+        "rapidCooldown": "Cooldown",
+        "rapidCoins": "Monitored assets",
+        "percent": "%",
+        "minutes": "minutes"
       }
     },
     "zh-CN": {
@@ -118,6 +145,14 @@ Item {
       "marketType": {
         "perpetual": "永续合约",
         "spot": "现货"
+      },
+      "notifications": {
+        "priceAlertTitle": "价格提醒",
+        "rapidAlertTitle": "极速涨跌提醒",
+        "priceUpper": "{symbol} 已达到上限价 {threshold}（当前 {price}）",
+        "priceLower": "{symbol} 已达到下限价 {threshold}（当前 {price}）",
+        "rapidRise": "{symbol} 在 {window} 分钟内快速上涨 {change}",
+        "rapidFall": "{symbol} 在 {window} 分钟内快速下跌 {change}"
       },
       "panel": {
         "catalogError": "资产目录暂时不可用",
@@ -176,7 +211,22 @@ Item {
         "seconds": "秒",
         "unavailable": "当前数据源不可用",
         "watchList": "自选资产列表",
-        "watchListTip": "点击资产名称添加或移除，使用箭头调整顺序"
+        "watchListTip": "点击资产名称添加或移除，使用箭头调整顺序",
+        "priceAlerts": "单币种价格提醒",
+        "priceAlertsDesc": "为每个监控资产设置可选的上限价和下限价",
+        "priceAlertEnabled": "价格提醒",
+        "upperPrice": "上限价",
+        "lowerPrice": "下限价",
+        "invalidPriceRange": "下限价必须小于上限价",
+        "pricePlaceholder": "不设置",
+        "rapidAlert": "极速涨跌提醒",
+        "rapidAlertDesc": "在配置的时间窗口内快速波动时提醒，仅对勾选资产生效",
+        "rapidThreshold": "波动阈值",
+        "rapidWindow": "观察窗口",
+        "rapidCooldown": "冷却时间",
+        "rapidCoins": "监控资产",
+        "percent": "%",
+        "minutes": "分钟"
       }
     }
   })
@@ -221,6 +271,9 @@ Item {
 
   // 数据状态
   property var marketData: ({})
+  property var priceAlertStates: ({})
+  property var rapidHistory: ({})
+  property var rapidAlertStates: ({})
   property bool isLoading: true
   property string errorMessage: ""
   property int refreshNonce: 0
@@ -918,7 +971,69 @@ Item {
     };
     root.quoteStates = nextStates;
     root.errorMessage = "";
+    root.evaluatePriceAlertForQuote(instrument, quote);
+    root.evaluateRapidAlertForQuote(instrument, quote);
     root.refreshNonce++;
+  }
+
+  function fillNotification(template, values) {
+    let message = String(template || "");
+    Object.keys(values || {}).forEach(key => {
+      message = message.split("{" + key + "}").join(String(values[key]));
+    });
+    return message;
+  }
+
+  function notifyPriceAlert(instrument, trigger, quote) {
+    const key = trigger.direction === "upper" ? "notifications.priceUpper" : "notifications.priceLower";
+    const body = root.fillNotification(root.tr(key), {
+      "symbol": instrument.displaySymbol || instrument.exchangeSymbol,
+      "threshold": root.formatPrice(trigger.threshold),
+      "price": root.formatPrice(quote.close)
+    });
+    ToastService.showNotice(root.tr("notifications.priceAlertTitle"), body, trigger.direction === "upper" ? "arrow-up" : "arrow-down");
+    Logger.i("CryptoMarket", "Price alert [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.id + "] " + trigger.direction + " at " + quote.close);
+  }
+
+  function evaluatePriceAlertForQuote(instrument, quote) {
+    const rule = root.priceAlerts[instrument.id];
+    if (!rule || instrument.status === "unresolved") return;
+
+    const checked = AlertEngine.evaluatePriceAlert(rule, quote.close, root.priceAlertStates[instrument.id]);
+    const nextStates = Object.assign({}, root.priceAlertStates);
+    nextStates[instrument.id] = checked.state;
+    root.priceAlertStates = nextStates;
+    checked.triggers.forEach(trigger => root.notifyPriceAlert(instrument, trigger, quote));
+  }
+
+  function notifyRapidAlert(instrument, trigger, windowMinutes) {
+    const key = trigger.direction === "rise" ? "notifications.rapidRise" : "notifications.rapidFall";
+    const body = root.fillNotification(root.tr(key), {
+      "symbol": instrument.displaySymbol || instrument.exchangeSymbol,
+      "change": Math.abs(trigger.changePercent).toFixed(2) + "%",
+      "window": windowMinutes
+    });
+    ToastService.showNotice(root.tr("notifications.rapidAlertTitle"), body, "bell-ringing");
+    Logger.i("CryptoMarket", "Rapid alert [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.id + "] " + trigger.direction + " " + trigger.changePercent.toFixed(2) + "%");
+  }
+
+  function evaluateRapidAlertForQuote(instrument, quote) {
+    const rule = AlertEngine.normalizeRapidAlert(root.rapidAlert);
+    if (!AlertEngine.isRapidAlertSelected(rule, instrument.id) || instrument.status === "unresolved") return;
+
+    const now = quote.updatedAt;
+    const history = Array.isArray(root.rapidHistory[instrument.id]) ? root.rapidHistory[instrument.id].slice() : [];
+    history.push({ "at": now, "price": quote.close });
+    const trimmed = AlertEngine.trimSamples(history, now, rule.windowMinutes);
+    const nextHistory = Object.assign({}, root.rapidHistory);
+    nextHistory[instrument.id] = trimmed;
+    root.rapidHistory = nextHistory;
+
+    const checked = AlertEngine.evaluateRapidMove(trimmed, rule, root.rapidAlertStates[instrument.id], now);
+    const nextStates = Object.assign({}, root.rapidAlertStates);
+    nextStates[instrument.id] = checked.state;
+    root.rapidAlertStates = nextStates;
+    if (checked.trigger) root.notifyRapidAlert(instrument, checked.trigger, rule.windowMinutes);
   }
 
   function setQuoteFailure(instrument, code, message) {
@@ -1029,7 +1144,9 @@ Item {
       dataSource: root.dataSource,
       marketType: root.marketType,
       proxyUrl: root.proxyUrl,
-      language: root.language
+      language: root.language,
+      priceAlerts: root.priceAlerts,
+      rapidAlert: root.rapidAlert
     };
     config.watchListSchemaVersion = root.watchListSchemaVersion;
     configFile.setText(JSON.stringify(config, null, 2));
@@ -1086,7 +1203,9 @@ Item {
       dataSource: root.dataSource,
       marketType: root.marketType,
       proxyUrl: root.proxyUrl,
-      language: root.language
+      language: root.language,
+      priceAlerts: root.priceAlerts,
+      rapidAlert: root.rapidAlert
     };
 
     if (Array.isArray(config.watchList)) {
@@ -1102,6 +1221,12 @@ Item {
     if (validMarketTypes.includes(config.marketType)) next.marketType = config.marketType;
     if (typeof config.proxyUrl === "string") next.proxyUrl = config.proxyUrl;
     if (validLanguages.includes(config.language)) next.language = config.language === "zh" ? "zh-CN" : config.language;
+    if (config.priceAlerts && typeof config.priceAlerts === "object" && !Array.isArray(config.priceAlerts)) {
+      next.priceAlerts = AlertEngine.normalizePriceAlerts(config.priceAlerts);
+    }
+    if (config.rapidAlert && typeof config.rapidAlert === "object" && !Array.isArray(config.rapidAlert)) {
+      next.rapidAlert = AlertEngine.normalizeRapidAlert(config.rapidAlert);
+    }
 
     if (!next.watchList.includes(next.barCoin)) {
       next.barCoin = next.watchList[0];
@@ -1141,8 +1266,13 @@ Item {
     root.marketType = nextMarketType;
     root.proxyUrl = config.proxyUrl;
     root.language = config.language;
+    root.priceAlerts = AlertEngine.normalizePriceAlerts(config.priceAlerts ?? root.priceAlerts);
+    root.rapidAlert = AlertEngine.normalizeRapidAlert(config.rapidAlert ?? root.rapidAlert);
     root.marketData = ({});
     root.quoteStates = ({});
+    root.priceAlertStates = ({});
+    root.rapidHistory = ({});
+    root.rapidAlertStates = ({});
     root.isLoading = true;
     root.errorMessage = "";
     root.dataGeneration++;
@@ -1192,6 +1322,8 @@ Item {
     pluginApi.pluginSettings.marketType = root.marketType;
     pluginApi.pluginSettings.proxyUrl = root.proxyUrl;
     pluginApi.pluginSettings.language = root.language;
+    pluginApi.pluginSettings.priceAlerts = root.priceAlerts;
+    pluginApi.pluginSettings.rapidAlert = root.rapidAlert;
     pluginApi.pluginSettings.watchListSchemaVersion = schemaVersion;
     pluginApi.saveSettings();
   }

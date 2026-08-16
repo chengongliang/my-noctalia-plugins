@@ -14,6 +14,14 @@
     "perpetual": "永续合约",
     "spot": "现货"
   },
+  "notifications": {
+    "priceAlertTitle": "价格提醒",
+    "rapidAlertTitle": "极速涨跌提醒",
+    "priceUpper": "{symbol} 已达到上限价 {threshold}（当前 {price}）",
+    "priceLower": "{symbol} 已达到下限价 {threshold}（当前 {price}）",
+    "rapidRise": "{symbol} 在 {window} 分钟内快速上涨 {change}",
+    "rapidFall": "{symbol} 在 {window} 分钟内快速下跌 {change}"
+  },
   "menu": {
     "settings": "设置"
   },
@@ -74,6 +82,21 @@
     "seconds": "秒",
     "unavailable": "当前数据源不可用",
     "watchList": "自选资产列表",
-    "watchListTip": "点击资产名称添加或移除，使用箭头调整顺序"
+    "watchListTip": "点击资产名称添加或移除，使用箭头调整顺序",
+    "priceAlerts": "单币种价格提醒",
+    "priceAlertsDesc": "为每个监控资产设置可选的上限价和下限价",
+    "priceAlertEnabled": "价格提醒",
+    "upperPrice": "上限价",
+    "lowerPrice": "下限价",
+    "invalidPriceRange": "下限价必须小于上限价",
+    "pricePlaceholder": "不设置",
+    "rapidAlert": "极速涨跌提醒",
+    "rapidAlertDesc": "在配置的时间窗口内快速波动时提醒，仅对勾选资产生效",
+    "rapidThreshold": "波动阈值",
+    "rapidWindow": "观察窗口",
+    "rapidCooldown": "冷却时间",
+    "rapidCoins": "监控资产",
+    "percent": "%",
+    "minutes": "分钟"
   }
 }

@@ -14,6 +14,14 @@
     "perpetual": "Perpetual futures",
     "spot": "Spot"
   },
+  "notifications": {
+    "priceAlertTitle": "Price alert",
+    "rapidAlertTitle": "Rapid move alert",
+    "priceUpper": "{symbol} reached the upper price {threshold} (current {price})",
+    "priceLower": "{symbol} reached the lower price {threshold} (current {price})",
+    "rapidRise": "{symbol} rose {change} in {window} minutes",
+    "rapidFall": "{symbol} fell {change} in {window} minutes"
+  },
   "menu": {
     "settings": "Settings"
   },
@@ -74,6 +82,21 @@
     "seconds": "seconds",
     "unavailable": "Unavailable from this data source",
     "watchList": "Watch list",
-    "watchListTip": "Click an asset to add or remove it, and use arrows to reorder"
+    "watchListTip": "Click an asset to add or remove it, and use arrows to reorder",
+    "priceAlerts": "Per-asset price alerts",
+    "priceAlertsDesc": "Set optional upper and lower prices for each monitored asset",
+    "priceAlertEnabled": "Price alert",
+    "upperPrice": "Upper price",
+    "lowerPrice": "Lower price",
+    "invalidPriceRange": "The lower price must be less than the upper price",
+    "pricePlaceholder": "Disabled",
+    "rapidAlert": "Rapid rise/fall alert",
+    "rapidAlertDesc": "Notify when a selected asset moves quickly within the configured window",
+    "rapidThreshold": "Move threshold",
+    "rapidWindow": "Observation window",
+    "rapidCooldown": "Cooldown",
+    "rapidCoins": "Monitored assets",
+    "percent": "%",
+    "minutes": "minutes"
   }
 }

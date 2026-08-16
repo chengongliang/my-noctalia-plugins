@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Layouts
 import qs.Commons
 import qs.Widgets
+import "AlertEngine.js" as AlertEngine
 
 ColumnLayout {
   id: root
@@ -21,6 +22,8 @@ ColumnLayout {
   property string editMarketType: cfg.marketType ?? defaults.marketType ?? "spot"
   property string editProxyUrl: cfg.proxyUrl ?? defaults.proxyUrl ?? ""
   property string editLanguage: cfg.language ?? defaults.language ?? "en"
+  property var editPriceAlerts: AlertEngine.normalizePriceAlerts(cfg.priceAlerts ?? defaults.priceAlerts ?? ({}))
+  property var editRapidAlert: AlertEngine.normalizeRapidAlert(cfg.rapidAlert ?? defaults.rapidAlert ?? ({}))
 
   property string configMessage: ""
   property bool configMessageIsError: false
@@ -209,37 +212,161 @@ ColumnLayout {
     }
   }
 
+  NText {
+    text: tr("settings.priceAlerts")
+    pointSize: Style.fontSizeS
+    font.weight: Style.fontWeightBold
+    color: Color.mOnSurfaceVariant
+  }
+
+  NText {
+    text: tr("settings.priceAlertsDesc")
+    pointSize: Style.fontSizeXS
+    color: Color.mOnSurfaceVariant
+  }
+
   Repeater {
     model: root.editWatchList
-    delegate: RowLayout {
+    delegate: ColumnLayout {
       Layout.fillWidth: true
       spacing: Style.marginS
 
-      NToggle {
-        label: getCoinName(modelData)
-        checked: true
-        onToggled: checked => toggleCoin(modelData, checked)
+      RowLayout {
         Layout.fillWidth: true
+
+        NToggle {
+          label: getCoinName(modelData)
+          checked: true
+          onToggled: checked => toggleCoin(modelData, checked)
+          Layout.fillWidth: true
+        }
+
+        NIconButton {
+          icon: "arrow-up"
+          enabled: index > 0
+          baseSize: Style.baseWidgetSize * 0.7
+          onClicked: moveCoinUp(modelData)
+        }
+
+        NIconButton {
+          icon: "arrow-down"
+          enabled: index < root.editWatchList.length - 1
+          baseSize: Style.baseWidgetSize * 0.7
+          onClicked: moveCoinDown(modelData)
+        }
       }
 
-      NIconButton {
-        icon: "arrow-up"
-        enabled: index > 0
-        baseSize: Style.baseWidgetSize * 0.7
-        onClicked: moveCoinUp(modelData)
+      RowLayout {
+        Layout.fillWidth: true
+        spacing: Style.marginS
+
+        NToggle {
+          label: tr("settings.priceAlertEnabled")
+          checked: priceAlertFor(modelData).enabled
+          onToggled: checked => setPriceAlertEnabled(modelData, checked)
+        }
+
+        NTextInput {
+          Layout.fillWidth: true
+          label: tr("settings.upperPrice")
+          placeholderText: tr("settings.pricePlaceholder")
+          text: priceInputValue(modelData, "upperPrice")
+          onTextChanged: {
+            if (inputItem.activeFocus) updatePriceAlert(modelData, "upperPrice", text);
+          }
+        }
+
+        NTextInput {
+          Layout.fillWidth: true
+          label: tr("settings.lowerPrice")
+          placeholderText: tr("settings.pricePlaceholder")
+          text: priceInputValue(modelData, "lowerPrice")
+          onTextChanged: {
+            if (inputItem.activeFocus) updatePriceAlert(modelData, "lowerPrice", text);
+          }
+        }
       }
 
-      NIconButton {
-        icon: "arrow-down"
-        enabled: index < root.editWatchList.length - 1
-        baseSize: Style.baseWidgetSize * 0.7
-        onClicked: moveCoinDown(modelData)
+      NText {
+        Layout.fillWidth: true
+        visible: !AlertEngine.isPriceAlertValid(priceAlertFor(modelData))
+        text: tr("settings.invalidPriceRange")
+        pointSize: Style.fontSizeXS
+        color: Color.mError
       }
     }
   }
 
   NDivider {
     Layout.fillWidth: true
+  }
+
+  NText {
+    text: tr("settings.rapidAlert")
+    pointSize: Style.fontSizeM
+    font.weight: Style.fontWeightBold
+    color: Color.mOnSurface
+  }
+
+  NText {
+    text: tr("settings.rapidAlertDesc")
+    pointSize: Style.fontSizeS
+    color: Color.mOnSurfaceVariant
+  }
+
+  NToggle {
+    label: tr("settings.rapidAlert")
+    checked: root.editRapidAlert.enabled
+    onToggled: checked => updateRapidAlert("enabled", checked)
+  }
+
+  RowLayout {
+    Layout.fillWidth: true
+    spacing: Style.marginS
+
+    NTextInput {
+      Layout.fillWidth: true
+      label: tr("settings.rapidThreshold") + " (" + tr("settings.percent") + ")"
+      text: String(root.editRapidAlert.thresholdPercent)
+      onTextChanged: {
+        if (inputItem.activeFocus) updateRapidAlert("thresholdPercent", text);
+      }
+    }
+
+    NTextInput {
+      Layout.fillWidth: true
+      label: tr("settings.rapidWindow") + " (" + tr("settings.minutes") + ")"
+      text: String(root.editRapidAlert.windowMinutes)
+      onTextChanged: {
+        if (inputItem.activeFocus) updateRapidAlert("windowMinutes", text);
+      }
+    }
+
+    NTextInput {
+      Layout.fillWidth: true
+      label: tr("settings.rapidCooldown") + " (" + tr("settings.minutes") + ")"
+      text: String(root.editRapidAlert.cooldownMinutes)
+      onTextChanged: {
+        if (inputItem.activeFocus) updateRapidAlert("cooldownMinutes", text);
+      }
+    }
+  }
+
+  NText {
+    text: tr("settings.rapidCoins")
+    pointSize: Style.fontSizeS
+    font.weight: Style.fontWeightBold
+    color: Color.mOnSurfaceVariant
+  }
+
+  Repeater {
+    model: root.editWatchList
+    delegate: NToggle {
+      Layout.fillWidth: true
+      label: getCoinName(modelData)
+      checked: rapidAlertSelected(modelData)
+      onToggled: checked => toggleRapidCoin(modelData, checked)
+    }
   }
 
   NComboBox {
@@ -335,7 +462,9 @@ ColumnLayout {
       dataSource: root.editDataSource,
       marketType: effectiveMarketType(),
       proxyUrl: root.editProxyUrl,
-      language: root.editLanguage
+      language: root.editLanguage,
+      priceAlerts: AlertEngine.normalizePriceAlerts(root.editPriceAlerts),
+      rapidAlert: AlertEngine.normalizeRapidAlert(root.editRapidAlert)
     };
 
     if (mainInstance) {
@@ -373,6 +502,8 @@ ColumnLayout {
     root.editMarketType = mainInstance.marketType;
     root.editProxyUrl = mainInstance.proxyUrl;
     root.editLanguage = mainInstance.language;
+    root.editPriceAlerts = AlertEngine.normalizePriceAlerts(mainInstance.priceAlerts);
+    root.editRapidAlert = AlertEngine.normalizeRapidAlert(mainInstance.rapidAlert);
   }
 
   function toggleCoin(coin, checked) {
@@ -420,6 +551,61 @@ ColumnLayout {
 
   function normalizeAsset(symbol) {
     return mainInstance ? mainInstance.getInstrumentId(symbol) : String(symbol || "").trim().toLowerCase();
+  }
+
+  function priceAlertFor(reference) {
+    const id = normalizeAsset(reference);
+    return root.editPriceAlerts[id] || ({ "enabled": false, "upperPrice": null, "lowerPrice": null });
+  }
+
+  function priceInputValue(reference, field) {
+    const value = priceAlertFor(reference)[field];
+    return value === null || value === undefined ? "" : String(value);
+  }
+
+  function setPriceAlertEnabled(reference, enabled) {
+    updatePriceAlert(reference, "enabled", enabled);
+  }
+
+  function updatePriceAlert(reference, field, value) {
+    const id = normalizeAsset(reference);
+    if (id === "") return;
+    const next = Object.assign({}, root.editPriceAlerts);
+    const current = priceAlertFor(id);
+    const updated = Object.assign({}, current);
+    if (field === "enabled") {
+      updated.enabled = value === true;
+    } else {
+      const text = String(value || "").trim();
+      updated[field] = text === "" ? null : (Number.isFinite(Number(text)) && Number(text) > 0 ? Number(text) : null);
+    }
+    next[id] = AlertEngine.normalizePriceAlert(updated);
+    root.editPriceAlerts = next;
+  }
+
+  function updateRapidAlert(field, value) {
+    const next = Object.assign({}, root.editRapidAlert);
+    if (field === "enabled") {
+      next.enabled = value === true;
+    } else {
+      next[field] = Number(value);
+    }
+    root.editRapidAlert = AlertEngine.normalizeRapidAlert(next);
+  }
+
+  function rapidAlertSelected(reference) {
+    return root.editRapidAlert.instrumentIds.indexOf(normalizeAsset(reference)) >= 0;
+  }
+
+  function toggleRapidCoin(reference, checked) {
+    const id = normalizeAsset(reference);
+    if (id === "") return;
+    const ids = root.editRapidAlert.instrumentIds.slice();
+    const index = ids.indexOf(id);
+    if (checked && index < 0) ids.push(id);
+    if (!checked && index >= 0) ids.splice(index, 1);
+    const next = Object.assign({}, root.editRapidAlert, { "instrumentIds": ids });
+    root.editRapidAlert = AlertEngine.normalizeRapidAlert(next);
   }
 
   function normalizeEditWatchList() {

@@ -2,7 +2,7 @@
 
 Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货币现货价格和已上线的 USDT 永续合约价格。
 
-![版本](https://img.shields.io/badge/版本-1.1.0-blue)
+![版本](https://img.shields.io/badge/版本-1.2.0-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 
 ## 功能特性
@@ -16,6 +16,8 @@ Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货�
 - **数据源驱动资产**：从火币、币安、OKX 和 CoinGecko 动态发现精确可交易标的，不再猜测交易代码
 - **可靠行情刷新**：限制并发请求，保留过期行情，并丢弃切换数据源前的旧响应
 - **自动 Logo 管理**：优先使用标的元数据，再进行精确外部匹配、按标的身份缓存，并在无可靠图片时显示文字缩写
+- **单币种价格提醒**：为每个监控标的分别设置上限价和下限价，仅在新行情穿越阈值时通知，价格回到区间内后自动重新武装
+- **极速涨跌提醒**：设置波动百分比、滚动时间窗口、冷却时间，并勾选需要监控快速涨跌的标的
 - **语言切换**：在英文和简体中文之间切换插件界面
 - **代理支持**：可选的 HTTP/SOCKS5 代理配置
 - **配置导入导出**：通过 JSON 文件导出和恢复设置
@@ -48,6 +50,8 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **显示模式**：完整模式（带符号）或简洁模式（仅价格）
 - **面板位置**：选择行情面板中间弹出或在点击的状态栏小部件附近弹出
 - **自选资产列表**：点击添加/移除资产，使用箭头按钮调整顺序
+- **单币种价格提醒**：为自选列表中的每个标的启用提醒并填写可选的上限价、下限价
+- **极速涨跌提醒**：启用全局规则，设置百分比/时间窗口/冷却时间，并勾选参与监控的标的
 - **涨跌配色**：红涨绿跌（中国风格）或绿涨红跌（西方风格）
 - **刷新频率**：设置更新间隔，1 到 60 秒
 - **界面语言**：在英文和简体中文之间切换插件界面
@@ -68,7 +72,15 @@ cp -r market-watch ~/.config/noctalia/plugins/
   "marketType": "spot",
   "proxyUrl": "",
   "language": "en",
-  "watchListSchemaVersion": 2
+  "watchListSchemaVersion": 2,
+  "priceAlerts": {},
+  "rapidAlert": {
+    "enabled": false,
+    "thresholdPercent": 5,
+    "windowMinutes": 5,
+    "cooldownMinutes": 30,
+    "instrumentIds": []
+  }
 }
 ```
 
@@ -132,6 +144,7 @@ cp -r market-watch ~/.config/noctalia/plugins/
 ```
 market-watch/
 ├── Main.qml          # 核心数据管理器，API 轮询，Logo 缓存
+├── AlertEngine.js    # 上下限价格与极速涨跌提醒计算
 ├── MarketProviders.js # 数据源发现和报价适配器
 ├── BarWidget.qml     # 状态栏小部件组件
 ├── Panel.qml         # 行情面板及币种表格
@@ -180,4 +193,4 @@ chengongliang
 
 ## 版本
 
-1.1.0 - 使用数据源驱动的资产发现和精确交易代码，覆盖火币、币安、OKX 和 CoinGecko，需要 Noctalia Shell >= 4.6.6
+1.2.0 - 新增每个标的独立的上限价/下限价提醒，以及可勾选标的的滚动极速涨跌通知，需要 Noctalia Shell >= 4.6.6

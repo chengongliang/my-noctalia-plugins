@@ -2,7 +2,7 @@
 
 A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
 
-![Version](https://img.shields.io/badge/version-1.1.0-blue)
+![Version](https://img.shields.io/badge/version-1.2.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -16,6 +16,8 @@ A real-time market monitoring plugin for Noctalia Shell, displaying live crypto 
 - **Provider-driven Instruments**: Discovers exact tradable instruments from Huobi, Binance, OKX, and CoinGecko instead of guessing symbols
 - **Reliable Quote Refresh**: Limits concurrent requests, preserves stale values, and rejects responses from an obsolete provider configuration
 - **Auto Logo Management**: Uses instrument metadata first, then exact external matching, an identity-keyed cache, and a text fallback
+- **Price Alerts**: Set independent upper and lower prices for every monitored instrument; notifications fire on fresh threshold crossings and automatically re-arm after the price returns inside the range
+- **Rapid-Move Alerts**: Configure a percentage, rolling time window, cooldown, and explicit instrument selection for fast rises and falls
 - **Language Switcher**: Switch the plugin interface between English and Simplified Chinese
 - **Proxy Support**: Optional HTTP/SOCKS5 proxy configuration
 - **Config Import/Export**: Export and restore your settings with a JSON file
@@ -48,6 +50,8 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **Display Mode**: Full mode (with symbol) or compact mode (price only)
 - **Panel Position**: Open the market panel centered or near the clicked bar widget
 - **Watch List**: Add/remove assets by clicking, reorder with arrow buttons
+- **Per-asset price alerts**: Enable an alert row and enter optional upper and lower prices for each watch-list instrument
+- **Rapid rise/fall alerts**: Enable the global rule, set its percentage/window/cooldown, and check the instruments it should monitor
 - **Color Scheme**: Red rises (Chinese style) or green rises (Western style)
 - **Refresh Interval**: Set update frequency from 1 to 60 seconds
 - **Language**: Switch the plugin interface between English and Simplified Chinese
@@ -68,7 +72,15 @@ Default settings in `manifest.json`:
   "marketType": "spot",
   "proxyUrl": "",
   "language": "en",
-  "watchListSchemaVersion": 2
+  "watchListSchemaVersion": 2,
+  "priceAlerts": {},
+  "rapidAlert": {
+    "enabled": false,
+    "thresholdPercent": 5,
+    "windowMinutes": 5,
+    "cooldownMinutes": 30,
+    "instrumentIds": []
+  }
 }
 ```
 
@@ -132,6 +144,7 @@ Instruments are discovered from the selected provider catalog. Search results us
 ```
 market-watch/
 ├── Main.qml          # Core data manager, API polling, logo cache
+├── AlertEngine.js    # Price-boundary and rapid-move alert evaluation
 ├── MarketProviders.js # Provider discovery and quote adapters
 ├── BarWidget.qml     # Status bar widget component
 ├── Panel.qml         # Market panel with coin table
@@ -180,4 +193,4 @@ chengongliang
 
 ## Version
 
-1.1.0 - Uses provider-driven instrument discovery and exact exchange identifiers across Huobi, Binance, OKX, and CoinGecko; requires Noctalia Shell >= 4.6.6
+1.2.0 - Adds per-instrument upper/lower price alerts and selectable rolling rapid-move notifications; requires Noctalia Shell >= 4.6.6
