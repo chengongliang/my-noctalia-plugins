@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/plugins/index.md", "reason": "插件层开发前检查清单：新设置必须有 metadata.defaultSettings 与 Settings.qml 编辑副本；先找现成 helper/翻译键"}
+{"file": ".trellis/spec/plugins/qml-components.md", "reason": "BarWidget/Settings 的组件契约，本次要重写 BarWidget 渲染并改设置页控件"}
+{"file": ".trellis/spec/plugins/state-and-io.md", "reason": "cfg → defaults → hardcoded 回退链、saveSettings 持久化模式，barWatchList/barScrollInterval 必须遵循"}
+{"file": ".trellis/spec/plugins/architecture.md", "reason": "mainInstance 共享状态与 manifest 契约，新增两个持久化字段需对齐"}
+{"file": ".trellis/spec/guides/reuse-and-ownership.md", "reason": "新增翻译键与动画方案前需确认复用规则（已否决 NSlideSwapView，复用 settings.unavailable）"}
+{"file": ".trellis/spec/plugins/testing-and-release.md", "reason": "版本 1.1.0→1.2.0 需同步 registry.json 版本与 lastUpdated，并跑既定静态检查"}

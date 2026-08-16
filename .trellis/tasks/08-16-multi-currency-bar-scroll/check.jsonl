@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/plugins/index.md", "reason": "质量检查命令基线：jq empty、MarketProviders.test.js、git diff --check，以及 QML 需 qs -c noctalia-shell 手动验证"}
+{"file": ".trellis/spec/plugins/testing-and-release.md", "reason": "校验版本号与 registry.json lastUpdated 是否同步、README 是否同步更新"}
+{"file": ".trellis/spec/guides/boundary-review.md", "reason": "本次跨越持久化设置 ↔ QML 状态 ↔ 导入导出文件三个边界，需按边界审查清单核对数据流"}
+{"file": ".trellis/spec/guides/reuse-and-ownership.md", "reason": "复核是否引入了重复的翻译键或本可复用的 helper"}
+{"file": ".trellis/spec/plugins/state-and-io.md", "reason": "复核回退链、编辑副本、saveSettings 时序是否符合既有模式"}
