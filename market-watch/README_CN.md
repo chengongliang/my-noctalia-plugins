@@ -2,7 +2,7 @@
 
 Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货币现货价格和已上线的 USDT 永续合约价格。
 
-![版本](https://img.shields.io/badge/版本-1.3.0-blue)
+![版本](https://img.shields.io/badge/版本-1.3.1-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 
 ## 功能特性
@@ -196,4 +196,4 @@ chengongliang
 
 ## 版本
 
-1.3.0 - 整合多资产状态栏轮播、每个标的独立的上限价/下限价提醒，以及可勾选标的的滚动极速涨跌通知，需要 Noctalia Shell >= 4.6.6
+1.3.1 - 将单资产价格提醒重组为清晰卡片，分行展示资产操作、提醒开关和等宽价格输入框，需要 Noctalia Shell >= 4.6.6

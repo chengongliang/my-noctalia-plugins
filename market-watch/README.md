@@ -2,7 +2,7 @@
 
 A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
 
-![Version](https://img.shields.io/badge/version-1.3.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -196,4 +196,4 @@ chengongliang
 
 ## Version
 
-1.3.0 - Combines multi-asset status-bar rotation with per-instrument price alerts and selectable rolling rapid-move notifications; requires Noctalia Shell >= 4.6.6
+1.3.1 - Reorganizes per-asset price alerts into clear cards with separate asset controls, alert toggles, and balanced price inputs; requires Noctalia Shell >= 4.6.6

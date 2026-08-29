@@ -218,80 +218,94 @@ ColumnLayout {
 
   Repeater {
     model: root.editWatchList
-    delegate: ColumnLayout {
+    delegate: NBox {
       Layout.fillWidth: true
-      spacing: Style.marginS
+      Layout.leftMargin: Style.borderS
+      Layout.rightMargin: Style.borderS
+      implicitHeight: priceAlertCardContent.implicitHeight + Style.margin2L
+      color: Color.mSurface
 
-      RowLayout {
-        Layout.fillWidth: true
+      ColumnLayout {
+        id: priceAlertCardContent
 
-        NToggle {
-          label: getCoinName(modelData)
-          checked: true
-          onToggled: checked => toggleCoin(modelData, checked)
+        anchors.fill: parent
+        anchors.margins: Style.marginL
+        spacing: Style.marginM
+
+        RowLayout {
           Layout.fillWidth: true
-        }
 
-        NIconButton {
-          icon: root.isBarAsset(modelData) ? "pin" : "unpin"
-          tooltipText: tr("settings.barAssetsToggle")
-          colorFg: root.isBarAsset(modelData) ? Color.mPrimary : Color.mOnSurfaceVariant
-          baseSize: Style.baseWidgetSize * 0.7
-          onClicked: toggleBarAsset(modelData)
-        }
+          NToggle {
+            label: getCoinName(modelData)
+            checked: true
+            onToggled: checked => toggleCoin(modelData, checked)
+            Layout.fillWidth: true
+          }
 
-        NIconButton {
-          icon: "arrow-up"
-          enabled: index > 0
-          baseSize: Style.baseWidgetSize * 0.7
-          onClicked: moveCoinUp(modelData)
-        }
+          NIconButton {
+            icon: root.isBarAsset(modelData) ? "pin" : "unpin"
+            tooltipText: tr("settings.barAssetsToggle")
+            colorFg: root.isBarAsset(modelData) ? Color.mPrimary : Color.mOnSurfaceVariant
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: toggleBarAsset(modelData)
+          }
 
-        NIconButton {
-          icon: "arrow-down"
-          enabled: index < root.editWatchList.length - 1
-          baseSize: Style.baseWidgetSize * 0.7
-          onClicked: moveCoinDown(modelData)
-        }
-      }
+          NIconButton {
+            icon: "arrow-up"
+            enabled: index > 0
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: moveCoinUp(modelData)
+          }
 
-      RowLayout {
-        Layout.fillWidth: true
-        spacing: Style.marginS
+          NIconButton {
+            icon: "arrow-down"
+            enabled: index < root.editWatchList.length - 1
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: moveCoinDown(modelData)
+          }
+        }
 
         NToggle {
+          Layout.fillWidth: true
           label: tr("settings.priceAlertEnabled")
           checked: priceAlertFor(modelData).enabled
           onToggled: checked => setPriceAlertEnabled(modelData, checked)
         }
 
-        NTextInput {
+        RowLayout {
           Layout.fillWidth: true
-          label: tr("settings.upperPrice")
-          placeholderText: tr("settings.pricePlaceholder")
-          text: priceInputValue(modelData, "upperPrice")
-          onTextChanged: {
-            if (inputItem.activeFocus) updatePriceAlert(modelData, "upperPrice", text);
+          spacing: Style.marginM
+
+          NTextInput {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            label: tr("settings.upperPrice")
+            placeholderText: tr("settings.pricePlaceholder")
+            text: priceInputValue(modelData, "upperPrice")
+            onTextChanged: {
+              if (inputItem.activeFocus) updatePriceAlert(modelData, "upperPrice", text);
+            }
+          }
+
+          NTextInput {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            label: tr("settings.lowerPrice")
+            placeholderText: tr("settings.pricePlaceholder")
+            text: priceInputValue(modelData, "lowerPrice")
+            onTextChanged: {
+              if (inputItem.activeFocus) updatePriceAlert(modelData, "lowerPrice", text);
+            }
           }
         }
 
-        NTextInput {
+        NText {
           Layout.fillWidth: true
-          label: tr("settings.lowerPrice")
-          placeholderText: tr("settings.pricePlaceholder")
-          text: priceInputValue(modelData, "lowerPrice")
-          onTextChanged: {
-            if (inputItem.activeFocus) updatePriceAlert(modelData, "lowerPrice", text);
-          }
+          visible: !AlertEngine.isPriceAlertValid(priceAlertFor(modelData))
+          text: tr("settings.invalidPriceRange")
+          pointSize: Style.fontSizeXS
+          color: Color.mError
         }
-      }
-
-      NText {
-        Layout.fillWidth: true
-        visible: !AlertEngine.isPriceAlertValid(priceAlertFor(modelData))
-        text: tr("settings.invalidPriceRange")
-        pointSize: Style.fontSizeXS
-        color: Color.mError
       }
     }
   }
