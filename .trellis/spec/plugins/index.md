@@ -12,6 +12,7 @@ Shell, not a package built by this repository.
 | [QML Components](./qml-components.md) | Bar, panel, settings, launcher, and widget contracts |
 | [State And I/O](./state-and-io.md) | Settings fallback, `Process`, `FileView`, async work, and logging |
 | [Provider Contracts](./provider-contracts.md) | Market Watch instruments, quotes, catalogs, and logos |
+| [Alert Contracts](./alerts.md) | Market Watch price boundaries, rapid moves, persistence, and notifications |
 | [Testing And Release](./testing-and-release.md) | Fixtures, shell checks, documentation, and registry synchronization |
 
 ## Pre-Development Checklist
@@ -21,6 +22,7 @@ Shell, not a package built by this repository.
 - [ ] Confirm every new setting has a `metadata.defaultSettings` value and an edit-copy in `Settings.qml`.
 - [ ] Search for an existing helper, translation key, asset, or provider parser before adding another one.
 - [ ] For external data, define the normalized boundary before changing a panel or settings consumer.
+- [ ] For market alerts, key rules by the full instrument ID and evaluate only fresh successful quotes.
 - [ ] Keep user-facing text in the plugin's `i18n/` files and use `pluginApi?.tr(...)`.
 
 ## Quality Check
@@ -30,6 +32,7 @@ Run the checks appropriate to the change before committing:
 ```bash
 jq empty market-watch/manifest.json hermes-agent/manifest.json registry.json
 node market-watch/tests/MarketProviders.test.js
+node market-watch/tests/AlertEngine.test.js
 git diff --check
 ```
 

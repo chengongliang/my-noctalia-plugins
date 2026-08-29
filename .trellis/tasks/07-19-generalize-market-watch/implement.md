@@ -51,6 +51,26 @@ Validation: missing logo metadata, exact-match miss, corrupt download, cached hi
 - Update README files, manifest version, registry version/timestamp, and local plugin sync.
 - Remove obsolete symbol aliases and static lists only after catalog/cache fallback is in place.
 
+## 7. Price and rapid-move notifications
+
+- Add `AlertEngine.js` with pure normalization, price-boundary crossing, and
+  rolling rapid-move/cooldown evaluation functions.
+- Add per-instrument `priceAlerts` and global `rapidAlert` defaults, preserving
+  unknown IDs across provider changes without symbol rebinding.
+- Wire fresh successful quotes in `Main.qml` to the alert engine and translated
+  `ToastService` notifications; reset transient history on configuration
+  generation changes and never evaluate stale/error quotes.
+- Extend `Settings.qml` with upper/lower inputs per watch-list row and a global
+  rapid-alert toggle, threshold/window/cooldown controls, and explicit asset
+  checkboxes. Include both alert sections in save/import/export paths.
+- Add English and Simplified Chinese settings/notification translations, README
+  behavior notes, manifest defaults, and synchronized registry version.
+
+Validation: unit-test initial baselines, upper/lower crossing and re-arming,
+rapid rise/fall threshold and cooldown, selected-ID filtering, malformed rules,
+and provider-generation reset. Manually save/restart settings and exercise
+notifications with fresh versus stale/error quotes.
+
 ## Final checks
 
 - `jq empty market-watch/manifest.json registry.json`
