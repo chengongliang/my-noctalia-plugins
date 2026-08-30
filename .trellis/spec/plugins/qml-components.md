@@ -23,6 +23,39 @@ menu after dispatching its action and uses `BarService.openPluginSettings` for
 settings. Do not put provider requests or persistent settings writes directly
 in a click handler.
 
+### Rotating Bar Content
+
+When one bar widget rotates through several records, keep one interactive pill
+inside a clipped item and swap its bound record only after the pill has moved
+outside the clip. This preserves one owner for click, context-menu, tooltip,
+and sizing behavior while preventing differently sized labels from flashing
+during the swap.
+
+```qml
+Item {
+  readonly property var records: mainInstance?.barWatchList ?? []
+
+  Timer {
+    running: root.records.length > 1
+    interval: Math.max(2, root.mainInstance?.barScrollInterval ?? 5) * 1000
+    repeat: true
+    onTriggered: if (!scrollAnimation.running) scrollAnimation.restart()
+  }
+}
+```
+
+Forward stable `implicitWidth` and `implicitHeight` from the pill through the
+clip for both horizontal and vertical bars. Use `Style.animationFast` so the
+transition becomes instantaneous when shell animations are disabled. Stop the
+animation, restore position/opacity, and clamp the current index whenever the
+record list changes. A single record must remain static and must not run a
+polling timer.
+
+Validate one record, three records, list mutation during rotation, horizontal
+and vertical bars, and differing label widths. A duplicate-pills design is a
+bad fit because it duplicates interaction bindings and creates two competing
+implicit-size owners.
+
 ## Panels
 
 Panels fill their slot, expose `geometryPlaceholder`, and scale preferred

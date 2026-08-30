@@ -13,7 +13,9 @@ ColumnLayout {
   property var defaults: pluginApi?.manifest?.metadata?.defaultSettings || ({})
 
   property var editWatchList: cfg.watchList ?? defaults.watchList ?? ["btc", "eth", "bnb", "sol", "xrp"]
-  property string editBarCoin: cfg.barCoin ?? defaults.barCoin ?? "btc"
+  // 旧配置没有 barWatchList 时从 barCoin 播种，与 Main.seedBarWatchList() 保持同一套规则。
+  property var editBarWatchList: cfg.barWatchList ?? (cfg.barCoin ? [cfg.barCoin] : undefined) ?? defaults.barWatchList ?? [defaults.barCoin ?? "btc"]
+  property int editBarScrollInterval: cfg.barScrollInterval ?? defaults.barScrollInterval ?? 5
   property string editDisplayMode: cfg.displayMode ?? defaults.displayMode ?? "text"
   property string editPanelPosition: cfg.panelPosition ?? defaults.panelPosition ?? "center"
   property bool editRedRises: cfg.redRises ?? defaults.redRises ?? false
@@ -119,17 +121,6 @@ ColumnLayout {
 
   NComboBox {
     Layout.fillWidth: true
-    label: tr("settings.barCoin")
-    description: tr("settings.barCoinDesc")
-    minimumWidth: 240
-    model: buildBarCoinModel()
-    currentKey: root.editBarCoin
-    defaultValue: defaults.barCoin ?? "btc"
-    onSelected: key => root.editBarCoin = key
-  }
-
-  NComboBox {
-    Layout.fillWidth: true
     label: tr("settings.displayMode")
     description: tr("settings.displayModeDesc")
     minimumWidth: 240
@@ -227,74 +218,123 @@ ColumnLayout {
 
   Repeater {
     model: root.editWatchList
-    delegate: ColumnLayout {
+    delegate: NBox {
       Layout.fillWidth: true
-      spacing: Style.marginS
+      Layout.leftMargin: Style.borderS
+      Layout.rightMargin: Style.borderS
+      implicitHeight: priceAlertCardContent.implicitHeight + Style.margin2L
+      color: Color.mSurface
 
-      RowLayout {
-        Layout.fillWidth: true
+      ColumnLayout {
+        id: priceAlertCardContent
 
-        NToggle {
-          label: getCoinName(modelData)
-          checked: true
-          onToggled: checked => toggleCoin(modelData, checked)
+        anchors.fill: parent
+        anchors.margins: Style.marginL
+        spacing: Style.marginM
+
+        RowLayout {
           Layout.fillWidth: true
-        }
 
-        NIconButton {
-          icon: "arrow-up"
-          enabled: index > 0
-          baseSize: Style.baseWidgetSize * 0.7
-          onClicked: moveCoinUp(modelData)
-        }
+          NToggle {
+            label: getCoinName(modelData)
+            checked: true
+            onToggled: checked => toggleCoin(modelData, checked)
+            Layout.fillWidth: true
+          }
 
-        NIconButton {
-          icon: "arrow-down"
-          enabled: index < root.editWatchList.length - 1
-          baseSize: Style.baseWidgetSize * 0.7
-          onClicked: moveCoinDown(modelData)
-        }
-      }
+          NIconButton {
+            icon: root.isBarAsset(modelData) ? "pin" : "unpin"
+            tooltipText: tr("settings.barAssetsToggle")
+            colorFg: root.isBarAsset(modelData) ? Color.mPrimary : Color.mOnSurfaceVariant
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: toggleBarAsset(modelData)
+          }
 
-      RowLayout {
-        Layout.fillWidth: true
-        spacing: Style.marginS
+          NIconButton {
+            icon: "arrow-up"
+            enabled: index > 0
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: moveCoinUp(modelData)
+          }
+
+          NIconButton {
+            icon: "arrow-down"
+            enabled: index < root.editWatchList.length - 1
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: moveCoinDown(modelData)
+          }
+        }
 
         NToggle {
+          Layout.fillWidth: true
           label: tr("settings.priceAlertEnabled")
           checked: priceAlertFor(modelData).enabled
           onToggled: checked => setPriceAlertEnabled(modelData, checked)
         }
 
-        NTextInput {
+        RowLayout {
           Layout.fillWidth: true
-          label: tr("settings.upperPrice")
-          placeholderText: tr("settings.pricePlaceholder")
-          text: priceInputValue(modelData, "upperPrice")
-          onTextChanged: {
-            if (inputItem.activeFocus) updatePriceAlert(modelData, "upperPrice", text);
+          spacing: Style.marginM
+
+          NTextInput {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            label: tr("settings.upperPrice")
+            placeholderText: tr("settings.pricePlaceholder")
+            text: priceInputValue(modelData, "upperPrice")
+            onTextChanged: {
+              if (inputItem.activeFocus) updatePriceAlert(modelData, "upperPrice", text);
+            }
+          }
+
+          NTextInput {
+            Layout.fillWidth: true
+            Layout.minimumWidth: 0
+            label: tr("settings.lowerPrice")
+            placeholderText: tr("settings.pricePlaceholder")
+            text: priceInputValue(modelData, "lowerPrice")
+            onTextChanged: {
+              if (inputItem.activeFocus) updatePriceAlert(modelData, "lowerPrice", text);
+            }
           }
         }
 
-        NTextInput {
+        NText {
           Layout.fillWidth: true
-          label: tr("settings.lowerPrice")
-          placeholderText: tr("settings.pricePlaceholder")
-          text: priceInputValue(modelData, "lowerPrice")
-          onTextChanged: {
-            if (inputItem.activeFocus) updatePriceAlert(modelData, "lowerPrice", text);
-          }
+          visible: !AlertEngine.isPriceAlertValid(priceAlertFor(modelData))
+          text: tr("settings.invalidPriceRange")
+          pointSize: Style.fontSizeXS
+          color: Color.mError
         }
-      }
-
-      NText {
-        Layout.fillWidth: true
-        visible: !AlertEngine.isPriceAlertValid(priceAlertFor(modelData))
-        text: tr("settings.invalidPriceRange")
-        pointSize: Style.fontSizeXS
-        color: Color.mError
       }
     }
+  }
+
+  NText {
+    text: tr("settings.barAssets")
+    pointSize: Style.fontSizeS
+    font.weight: Style.fontWeightBold
+    color: Color.mOnSurfaceVariant
+  }
+
+  NText {
+    text: tr("settings.barAssetsTip")
+    pointSize: Style.fontSizeXS
+    color: Color.mOnSurfaceVariant
+  }
+
+  NLabel {
+    label: tr("settings.barScrollInterval") + ": " + Math.round(root.editBarScrollInterval) + " " + tr("settings.seconds")
+    description: tr("settings.barScrollIntervalDesc")
+  }
+
+  NSlider {
+    Layout.fillWidth: true
+    from: 2
+    to: 60
+    stepSize: 1
+    value: root.editBarScrollInterval
+    onValueChanged: root.editBarScrollInterval = Math.round(value)
   }
 
   NDivider {
@@ -451,10 +491,12 @@ ColumnLayout {
     if (!pluginApi) return;
 
     const normalizedWatchList = normalizeEditWatchList();
-    const normalizedBarCoin = normalizedWatchList.includes(normalizeAsset(root.editBarCoin)) ? normalizeAsset(root.editBarCoin) : normalizedWatchList[0];
+    const normalizedBarWatchList = normalizeEditBarWatchList(normalizedWatchList);
     const nextConfig = {
       watchList: normalizedWatchList,
-      barCoin: normalizedBarCoin,
+      barWatchList: normalizedBarWatchList,
+      barCoin: normalizedBarWatchList[0],
+      barScrollInterval: root.editBarScrollInterval,
       displayMode: root.editDisplayMode,
       panelPosition: root.editPanelPosition === "click" ? "click" : "center",
       redRises: root.editRedRises,
@@ -493,7 +535,8 @@ ColumnLayout {
 
   function syncFromMainInstance() {
     root.editWatchList = mainInstance.watchList;
-    root.editBarCoin = mainInstance.barCoin;
+    root.editBarWatchList = mainInstance.barWatchList;
+    root.editBarScrollInterval = mainInstance.barScrollInterval;
     root.editDisplayMode = mainInstance.displayMode;
     root.editPanelPosition = mainInstance.panelPosition;
     root.editRedRises = mainInstance.redRises;
@@ -518,8 +561,25 @@ ColumnLayout {
       if (index > -1) {
         list.splice(index, 1);
       }
+      // 状态栏列表必须始终是自选列表的子集，移出自选时同步剔除。
+      const barList = root.editBarWatchList.filter(reference => normalizeAsset(reference) !== key);
+      if (barList.length !== root.editBarWatchList.length) root.editBarWatchList = barList;
     }
     root.editWatchList = list;
+  }
+
+  function isBarAsset(coin) {
+    const key = normalizeAsset(coin);
+    return root.editBarWatchList.some(reference => normalizeAsset(reference) === key);
+  }
+
+  function toggleBarAsset(coin) {
+    const key = normalizeAsset(coin);
+    if (isBarAsset(coin)) {
+      root.editBarWatchList = root.editBarWatchList.filter(reference => normalizeAsset(reference) !== key);
+    } else {
+      root.editBarWatchList = [...root.editBarWatchList, key];
+    }
   }
 
   function moveCoinUp(coin) {
@@ -621,23 +681,20 @@ ColumnLayout {
     return result.length > 0 ? result : ["btc"];
   }
 
-  function effectiveMarketType() {
-    return root.editDataSource === "coingecko" ? "spot" : root.editMarketType;
+  // 与 Main.normalizeBarWatchList() 同规则：约束为自选子集、按自选排序、非空回退。
+  function normalizeEditBarWatchList(watchList) {
+    const requested = {};
+    for (let i = 0; i < root.editBarWatchList.length; i++) {
+      const key = normalizeAsset(root.editBarWatchList[i]);
+      if (key !== "") requested[key] = true;
+    }
+
+    const result = watchList.filter(reference => requested[reference] === true);
+    return result.length > 0 ? result : [watchList[0]];
   }
 
-  function buildBarCoinModel() {
-    const model = [];
-    const seen = {};
-    const append = function(symbol) {
-      const key = normalizeAsset(symbol);
-      if (key !== "" && !seen[key]) {
-        seen[key] = true;
-        model.push({ "key": key, "name": getCoinName(key) });
-      }
-    };
-
-    root.editWatchList.forEach(append);
-    return model;
+  function effectiveMarketType() {
+    return root.editDataSource === "coingecko" ? "spot" : root.editMarketType;
   }
 
   function getSearchResults() {

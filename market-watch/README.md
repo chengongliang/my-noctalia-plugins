@@ -2,14 +2,14 @@
 
 A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
+![Version](https://img.shields.io/badge/version-1.3.1-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
 
 - **Multi-Exchange Support**: Huobi, Binance, OKX, and CoinGecko
 - **Spot and Perpetual Markets**: Spot crypto pairs plus supported USDT perpetual contracts, including exchange-listed metals and stock contracts
-- **Status Bar Widget**: Display single asset price with trend indicator
+- **Status Bar Widget**: Display one or more asset prices with trend indicators and vertical rotation
 - **Market Panel**: Detailed view of multiple assets with 24h high/low
 - **Display Modes**: Text mode (with asset symbol) or compact mode (price only)
 - **Color Schemes**: Red-rises-green-falls or green-rises-red-falls
@@ -46,10 +46,11 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **Data Source**: Choose between Huobi, Binance, OKX, or CoinGecko
 - **Proxy URL**: Optional HTTP/SOCKS5 proxy (format: `http://host:port` or `socks5://host:port`)
 - **Market Type**: Choose spot or perpetual futures for Huobi, Binance, and OKX
-- **Status Bar Asset**: Select which asset to display in the status bar
+- **Status Bar Assets**: Pin one or more watch list assets to the status bar. A single asset stays static; two or more scroll vertically
+- **Status Bar Switch Interval**: How long each asset stays visible before scrolling to the next (2-60 seconds). Independent of the data refresh interval
 - **Display Mode**: Full mode (with symbol) or compact mode (price only)
 - **Panel Position**: Open the market panel centered or near the clicked bar widget
-- **Watch List**: Add/remove assets by clicking, reorder with arrow buttons
+- **Watch List**: Add/remove assets by clicking, reorder with arrow buttons, pin to the status bar with the pin button
 - **Per-asset price alerts**: Enable an alert row and enter optional upper and lower prices for each watch-list instrument
 - **Rapid rise/fall alerts**: Enable the global rule, set its percentage/window/cooldown, and check the instruments it should monitor
 - **Color Scheme**: Red rises (Chinese style) or green rises (Western style)
@@ -63,7 +64,9 @@ Default settings in `manifest.json`:
 ```json
 {
   "watchList": ["btc", "eth", "bnb", "sol", "xrp"],
+  "barWatchList": ["btc"],
   "barCoin": "btc",
+  "barScrollInterval": 5,
   "displayMode": "text",
   "panelPosition": "center",
   "redRises": false,
@@ -193,4 +196,4 @@ chengongliang
 
 ## Version
 
-1.2.0 - Adds per-instrument upper/lower price alerts and selectable rolling rapid-move notifications; requires Noctalia Shell >= 4.6.6
+1.3.1 - Reorganizes per-asset price alerts into clear cards with separate asset controls, alert toggles, and balanced price inputs; requires Noctalia Shell >= 4.6.6
