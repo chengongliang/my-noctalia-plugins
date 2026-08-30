@@ -235,10 +235,10 @@ ColumnLayout {
         RowLayout {
           Layout.fillWidth: true
 
-          NToggle {
-            label: getCoinName(modelData)
-            checked: true
-            onToggled: checked => toggleCoin(modelData, checked)
+          NText {
+            text: getCoinName(modelData)
+            pointSize: Style.fontSizeS
+            color: Color.mOnSurface
             Layout.fillWidth: true
           }
 
@@ -262,6 +262,17 @@ ColumnLayout {
             enabled: index < root.editWatchList.length - 1
             baseSize: Style.baseWidgetSize * 0.7
             onClicked: moveCoinDown(modelData)
+          }
+
+          NIconButton {
+            icon: "trash"
+            tooltipText: root.editWatchList.length > 1
+              ? tr("settings.removeAsset")
+              : tr("settings.keepOneAsset")
+            enabled: root.editWatchList.length > 1
+            colorFg: enabled ? Color.mError : Color.mOnSurfaceVariant
+            baseSize: Style.baseWidgetSize * 0.7
+            onClicked: removeCoin(modelData)
           }
         }
 
@@ -549,23 +560,24 @@ ColumnLayout {
     root.editRapidAlert = AlertEngine.normalizeRapidAlert(mainInstance.rapidAlert);
   }
 
-  function toggleCoin(coin, checked) {
+  function removeCoin(coin) {
+    if (root.editWatchList.length <= 1) return;
+
     const key = normalizeAsset(coin);
-    let list = [...root.editWatchList];
-    if (checked) {
-      if (!list.includes(key)) {
-        list.push(key);
-      }
-    } else {
-      const index = list.indexOf(key);
-      if (index > -1) {
-        list.splice(index, 1);
-      }
-      // 状态栏列表必须始终是自选列表的子集，移出自选时同步剔除。
-      const barList = root.editBarWatchList.filter(reference => normalizeAsset(reference) !== key);
-      if (barList.length !== root.editBarWatchList.length) root.editBarWatchList = barList;
-    }
-    root.editWatchList = list;
+    if (key === "") return;
+
+    root.editWatchList = root.editWatchList.filter(reference => normalizeAsset(reference) !== key);
+    // 状态栏列表必须始终是自选列表的子集，移出自选时同步剔除。
+    root.editBarWatchList = root.editBarWatchList.filter(reference => normalizeAsset(reference) !== key);
+
+    const priceAlerts = Object.assign({}, root.editPriceAlerts);
+    delete priceAlerts[key];
+    root.editPriceAlerts = priceAlerts;
+
+    const rapidIds = root.editRapidAlert.instrumentIds.filter(reference => normalizeAsset(reference) !== key);
+    root.editRapidAlert = AlertEngine.normalizeRapidAlert(
+      Object.assign({}, root.editRapidAlert, { "instrumentIds": rapidIds })
+    );
   }
 
   function isBarAsset(coin) {
