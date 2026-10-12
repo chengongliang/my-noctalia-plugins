@@ -27,8 +27,8 @@ tags = ["panel", "launcher", "utility", "ai"]
 [[plugin]]
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.3"
-updated_at = 1791785228
+version = "2.0.4"
+updated_at = 1791788265
 added_at = 1791776036
 author = "chengongliang"
 license = "MIT"

@@ -84,12 +84,12 @@ reads them but cannot write them, so they are the *static* half of the configura
 | Proxy URL | string | empty | Optional `http://host:port` or `socks5://host:port`, passed to every `curl` call. |
 | Refresh interval | int, 1-60 | 5 | Seconds between refresh cycles. CoinGecko is floored at 10 seconds. |
 | Red rises | bool | false | Rise in red and fall in green, instead of the Western green/red. |
-| Watch list | string list | btc, eth, bnb, sol, xrp | Seeds the watch list on the first run only. |
 
 Everything else is edited in the **settings panel** and stored by the service in
 `pluginDataDir()/market.json`, because a v5 plugin cannot write settings:
 
-- the watch list (order included) and the bar asset,
+- the watch list (order included) and the bar asset — it starts from a built-in default
+  (btc, eth, bnb, sol, xrp) and is edited here, with add/remove/reorder and symbol search,
 - the status bar display mode (full text or compact price only),
 - the per-asset upper and lower price alerts,
 - the rapid rise/fall rule: enable, threshold percent, observation window, cooldown

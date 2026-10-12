@@ -73,12 +73,12 @@ noctalia msg plugin chengongliang/market-watch:service focused status
 | 代理地址 | 字符串 | 空 | 可选 `http://host:port` 或 `socks5://host:port`，会传给每个 `curl` 调用。 |
 | 刷新频率 | 整数，1-60 | 5 | 刷新周期（秒）；CoinGecko 最低为 10 秒。 |
 | 红涨绿跌 | 布尔 | false | 涨为红色、跌为绿色，而非西式的绿涨红跌。 |
-| 自选资产列表 | 字符串列表 | btc、eth、bnb、sol、xrp | 仅在首次运行时用于初始化自选列表。 |
 
 其余设置都在**设置面板**中编辑，并由 `service` 保存到 `pluginDataDir()/market.json`，因为
 v5 插件无法写入设置：
 
-- 自选资产列表（含顺序）和状态栏资产；
+- 自选资产列表（含顺序）和状态栏资产——初始值为内置的 btc、eth、bnb、sol、xrp，
+  在此面板中可增删、调整顺序并搜索标的；
 - 状态栏显示模式（完整文本或仅价格）；
 - 每个资产的上限价与下限价提醒；
 - 极速涨跌提醒：启用、波动阈值、观察窗口、冷却时间以及被监控的资产。

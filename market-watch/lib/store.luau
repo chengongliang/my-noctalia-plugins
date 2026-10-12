@@ -320,8 +320,10 @@ end
 
 -- ── Runtime state ───────────────────────────────────────────────────────────
 
--- Canonical runtime shape. `seed` is the manifest watch_list, used only the first
--- time, before market.json exists.
+-- Canonical runtime shape. `seed` is an optional first-run list; no caller passes one
+-- now that the watch list is edited in the panel rather than declared as a setting, so
+-- this normally falls back to DEFAULT_WATCH_LIST. The parameter stays for the tests
+-- and for importing a legacy list.
 function Store.default_runtime(seed)
   local watch_list = Store.normalize_watch_list(seed)
   if #watch_list == 0 then

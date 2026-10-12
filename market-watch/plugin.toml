@@ -15,7 +15,7 @@
 
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.3"
+version = "2.0.4"
 plugin_api = 26
 author = "chengongliang"
 license = "MIT"
@@ -88,15 +88,11 @@ label_key = "settings.red_rises"
 description_key = "settings.color_scheme_desc"
 default = false
 
-# Seeds the watch list on the very first run only. After that the list the user
-# edits in the settings panel (market.json) wins, so changing this value later
-# cannot clobber a live watch list.
-[[setting]]
-key = "watch_list"
-type = "string_list"
-label_key = "settings.watch_list"
-description_key = "settings.watch_list_tip"
-default = ["btc", "eth", "bnb", "sol", "xrp"]
+# The watch list is deliberately NOT a setting. It is runtime state the user edits in the
+# settings panel (with add/remove/reorder and instrument search), and it lives in
+# pluginDataDir()/market.json. A second, host-rendered list here would be a stale mirror of
+# it: the plugin cannot write settings, so the two could never be kept in step. The seeded
+# default list is Store.DEFAULT_WATCH_LIST.
 
 # ── Entries ─────────────────────────────────────────────────────────────────
 

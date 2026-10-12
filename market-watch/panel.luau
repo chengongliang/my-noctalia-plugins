@@ -188,10 +188,10 @@ end
 
 local function render()
   dark_mode = noctalia.isDarkMode()
-  local columns = { header_row() }
 
+  local rows = {}
   for _, row in ipairs(watch) do
-    table.insert(columns, data_row(row))
+    table.insert(rows, data_row(row))
   end
 
   local body = {
@@ -245,7 +245,15 @@ local function render()
   -- The table is hidden while loading or while the plugin reports a problem, so the
   -- status box is the only thing on screen then (v4 toggled the same two blocks).
   if busy ~= true and ((health == nil) or health.error == "") then
-    table.insert(body, ui.scroll({ key = "table", flexGrow = 1, gap = ROW_GAP }, columns))
+    -- The headings sit OUTSIDE the scroll region. Inside it they scroll away with the
+    -- rows, so any watch list longer than the panel showed a column of unlabelled
+    -- numbers; a ten-coin list already overflows the declared height once the title and
+    -- footer are accounted for. Both live in one column so the 6 px row gap is kept
+    -- between the headings and the first row.
+    table.insert(body, ui.column({ flexGrow = 1, gap = ROW_GAP }, {
+      header_row(),
+      ui.scroll({ key = "table", flexGrow = 1, gap = ROW_GAP }, rows),
+    }))
   end
 
   table.insert(body, ui.label({

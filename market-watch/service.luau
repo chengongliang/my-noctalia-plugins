@@ -45,10 +45,10 @@
 -- end to end against the tests/fixtures payloads. lib/alerts.luau and
 -- lib/providers.luau hold to the same rule for the `lua5.4 tests/*` harnesses.
 --
--- Read-only manifest settings (data_source, market_type, proxy_url,
--- refresh_interval, red_rises, watch_list) are the static configuration: a plugin
--- cannot write settings, so everything the user can change at runtime lives in
--- pluginDataDir()/market.json, which lib/store.luau owns.
+-- Read-only manifest settings (data_source, market_type, proxy_url, refresh_interval,
+-- red_rises) are the static configuration: a plugin cannot write settings, so
+-- everything the user can change at runtime - the watch list, the bar coin, the alert
+-- rules - lives in pluginDataDir()/market.json, which lib/store.luau owns.
 
 local providers = require("./lib/providers.luau")
 local alerts = require("./lib/alerts.luau")
@@ -123,12 +123,9 @@ local function read_static()
 
   local red_rises = noctalia.getConfig("red_rises") == true
 
-  -- watch_list is only a first-run seed: once market.json exists it wins, because
-  -- the plugin - not the manifest - owns the list the user edits.
-  local watch_seed = noctalia.getConfig("watch_list")
-  if type(watch_seed) ~= "table" then
-    watch_seed = nil
-  end
+  -- The watch list is not configuration: it is runtime state the user edits in the
+  -- settings panel, persisted in market.json. The store seeds the built-in default list
+  -- when no saved state exists yet.
 
   return {
     source = source,
@@ -136,7 +133,6 @@ local function read_static()
     proxy_url = proxy_url,
     refresh_interval = refresh_interval,
     red_rises = red_rises,
-    watch_seed = watch_seed,
   }
 end
 
@@ -1873,11 +1869,11 @@ if not noctalia.commandExists("curl") then
   busy = false
 end
 
-runtime = store.load_runtime(static.watch_seed)
+runtime = store.load_runtime()
 instruments = store.load_instruments()
 load_tv_logo_ids()
--- Resolve whatever the stored list still describes as a bare symbol (a first-run
--- seed, or a market.json written by an earlier version) before publishing.
+-- Resolve whatever the stored list still describes as a bare symbol (the seeded
+-- default, or a market.json written by an earlier version) before publishing.
 canonicalize_watch_list()
 
 -- Publish before any network call so the widget can render its asset immediately,
