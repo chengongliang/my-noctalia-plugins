@@ -1,0 +1,139 @@
+{
+  "status": {
+    "offline": "Offline",
+    "idle": "Online",
+    "busy": "Working",
+    "attention": "Needs You",
+    "degraded": "Degraded",
+    "error": "Error",
+    "unknown": "Unknown"
+  },
+  "widget": {
+    "tooltip": "Hermes: {status}",
+    "tooltip_model": " · {model}",
+    "tooltip_error": "\n{error}"
+  },
+  "panel": {
+    "title": "Hermes",
+    "send": "Send",
+    "interrupt": "Interrupt",
+    "approve": "Allow",
+    "approve_session": "Allow Session",
+    "deny": "Deny",
+    "new_session": "New Session",
+    "placeholder": "Ask Hermes...",
+    "bridge_offline": "Bridge offline",
+    "no_session": "No active session",
+    "approval_required": "Approval required",
+    "close": "Close",
+    "no_model": "No model selected",
+    "model_picker": "Model settings",
+    "background_running": "{count} background action running",
+    "background_actions_last": "{count} background actions, last: {tool}"
+  },
+  "summary": {
+    "model": "Model",
+    "cron": "Cron",
+    "mcp": "MCP",
+    "gateway": "Gateway",
+    "activity": "Activity",
+    "unknown": "Unknown",
+    "no_mcp_servers": "No MCP servers",
+    "no_background_actions": "No background actions",
+    "cron_value": "{active} active / {total} total",
+    "mcp_value": "{enabled} enabled / {total} total"
+  },
+  "bubble": {
+    "you": "You",
+    "hermes": "Hermes",
+    "code": "code",
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "error": {
+    "connection_failed": "Connection failed: {target} unreachable",
+    "auth_failed": "Authentication failed: wrong bridge token",
+    "request_failed": "Bridge request failed: {status}",
+    "invalid_response": "Invalid bridge response",
+    "remote_unreachable": "Remote bridge unreachable at {target}",
+    "bridge_spawn_failed": "Could not start the local bridge",
+    "bridge_start_failed": "Bridge failed to start",
+    "token_missing": "Bridge token not found - check the state file directory"
+  },
+  "launcher": {
+    "ask": "Ask Hermes",
+    "type_prompt": "Type a prompt for Hermes",
+    "type_prompt_subtitle": "Send a one-off task to Hermes",
+    "open_panel": "Open Hermes panel",
+    "open_panel_description": "Show the Hermes chat panel",
+    "new_session": "Start Hermes session",
+    "new_session_description": "Create a new Hermes RPC session",
+    "resume_latest": "Resume latest Hermes session",
+    "resume_latest_description": "Resume the stored session when available"
+  },
+  "settings": {
+    "bridge_host": {
+      "label": "Bridge host",
+      "description": "Host of the bridge; in client-only mode this is the forwarded address"
+    },
+    "bridge_port": {
+      "label": "Bridge port",
+      "description": "Port of the bridge; it must match the local port of the SSH tunnel"
+    },
+    "state_file": {
+      "label": "State file",
+      "description": "Where the bridge writes its state; the auth token is read from the same directory"
+    },
+    "hermes_home": {
+      "label": "Hermes home",
+      "description": "Directory holding the Hermes configuration; auto-detected when left at the default"
+    },
+    "hermes_command": {
+      "label": "Hermes command",
+      "description": "Hermes executable the bridge runs for gateway and one-shot commands"
+    },
+    "auto_start_bridge": {
+      "label": "Auto-start bridge",
+      "description": "Start the local bridge when Noctalia loads"
+    },
+    "auto_start_gateway": {
+      "label": "Auto-start gateway",
+      "description": "Start the Hermes gateway when it is not running"
+    },
+    "client_only_mode": {
+      "label": "Client-only mode (remote bridge)",
+      "description": "Connect to a Hermes bridge running on a remote server over SSH instead of starting one locally. Set host and port to the forwarded address and paste the bridge token below."
+    },
+    "bridge_token": {
+      "label": "Bridge token",
+      "description": "Token printed by the server helper (hermes-bridge-serve.sh). Required in client-only mode."
+    },
+    "status_poll_interval": {
+      "label": "Status poll interval",
+      "description": "Seconds between bridge health checks and idle state polls"
+    },
+    "hide_when_idle": {
+      "label": "Hide when idle",
+      "description": "Only show the bar pill when Hermes is active or needs attention"
+    },
+    "show_tool_activity": {
+      "label": "Show tool activity",
+      "description": "Keep tool calls collapsed into a compact activity line"
+    },
+    "default_provider": {
+      "label": "Default provider",
+      "description": "Fallback provider shown when the session reports none"
+    },
+    "default_model": {
+      "label": "Default model",
+      "description": "Fallback model shown when the session reports none"
+    },
+    "provider_select": "Provider",
+    "model_select": "Model",
+    "provider_current": "Current/default",
+    "models_loading": "Loading models...",
+    "models_failed": "Failed to load models: {error}",
+    "apply_model": "Apply model to session",
+    "persist_model": "Save as global default"
+  }
+}
