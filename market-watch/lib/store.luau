@@ -28,6 +28,15 @@ Store.SCHEMA_VERSION = 2
 
 Store.DEFAULT_WATCH_LIST = { "btc", "eth", "bnb", "sol", "xrp" }
 Store.VALID_SOURCES = { "huobi", "binance", "okx", "coingecko" }
+
+-- Bar carousel. This is new capability, not a v4 restoration: v4's BarWidget.qml had
+-- no rotation and its Main.qml only ran a refresh Timer and a logo-retry Timer. The
+-- bounds are deliberately wide enough to be useful (3 s is about as fast as a bar
+-- should flicker) and narrow enough that a typo cannot turn the bar into a strobe or
+-- leave it looking broken; v4 clamped its numeric settings the same way.
+Store.CAROUSEL_DEFAULT_SECONDS = 10
+Store.CAROUSEL_MIN_SECONDS = 3
+Store.CAROUSEL_MAX_SECONDS = 300
 Store.VALID_MARKET_TYPES = { "spot", "perpetual" }
 Store.VALID_DISPLAY_MODES = { "text", "compact" }
 
@@ -197,6 +206,31 @@ end
 
 -- ── Directories and paths ───────────────────────────────────────────────────
 
+function Store.normalize_carousel_interval(value)
+  local alerts_module = alerts()
+  local number = alerts_module and alerts_module.to_number(value) or tonumber(value)
+  if number == nil then
+    return Store.CAROUSEL_DEFAULT_SECONDS
+  end
+  number = math.floor(number + 0.5)
+  if number < Store.CAROUSEL_MIN_SECONDS then
+    return Store.CAROUSEL_MIN_SECONDS
+  end
+  if number > Store.CAROUSEL_MAX_SECONDS then
+    return Store.CAROUSEL_MAX_SECONDS
+  end
+  return number
+end
+
+-- Followed assets: a list of references, de-duplicated. An empty list is meaningful
+-- ("rotate the whole watch list"), so callers must test the input type, never `#`.
+function Store.normalize_carousel_ids(value)
+  if type(value) ~= "table" then
+    return nil
+  end
+  return Store.normalize_watch_list(value)
+end
+
 function Store.data_dir()
   local dir, err = noctalia.pluginDataDir()
   if dir == nil or dir == "" then
@@ -334,6 +368,11 @@ function Store.default_runtime(seed)
     watch_list = watch_list,
     bar_coin = watch_list[1],
     display_mode = "text",
+    -- Off by default: nothing about the bar changes until the user opts in.
+    carousel_enabled = false,
+    carousel_interval = Store.CAROUSEL_DEFAULT_SECONDS,
+    carousel_ids = {},
+    carousel_index = 1,
     price_alerts = active_alerts and active_alerts.normalize_price_alerts({}) or {},
     rapid_alert = active_alerts and active_alerts.normalize_rapid_alert({})
       or { enabled = false, threshold_percent = 5, window_minutes = 5, cooldown_minutes = 30, instrument_ids = {} },
@@ -402,6 +441,10 @@ function Store.apply_persisted(runtime, persisted)
     watch_list = runtime.watch_list,
     bar_coin = runtime.bar_coin,
     display_mode = runtime.display_mode,
+    carousel_enabled = runtime.carousel_enabled,
+    carousel_interval = runtime.carousel_interval,
+    carousel_ids = runtime.carousel_ids,
+    carousel_index = runtime.carousel_index,
     price_alerts = runtime.price_alerts,
     rapid_alert = runtime.rapid_alert,
     watch_list_schema_version = runtime.watch_list_schema_version,
@@ -426,6 +469,39 @@ function Store.apply_persisted(runtime, persisted)
   local raw_display_mode = persisted.display_mode ~= nil and persisted.display_mode or persisted.displayMode
   if includes(Store.VALID_DISPLAY_MODES, raw_display_mode) then
     next_runtime.display_mode = raw_display_mode
+  end
+
+  local raw_carousel_enabled = persisted.carousel_enabled
+  if raw_carousel_enabled == nil then
+    raw_carousel_enabled = persisted.carouselEnabled
+  end
+  if type(raw_carousel_enabled) == "boolean" then
+    next_runtime.carousel_enabled = raw_carousel_enabled
+  end
+
+  local raw_carousel_interval = persisted.carousel_interval
+  if raw_carousel_interval == nil then
+    raw_carousel_interval = persisted.carouselInterval
+  end
+  if raw_carousel_interval ~= nil then
+    next_runtime.carousel_interval = Store.normalize_carousel_interval(raw_carousel_interval)
+  end
+
+  local raw_carousel_ids = persisted.carousel_ids
+  if raw_carousel_ids == nil then
+    raw_carousel_ids = persisted.carouselIds
+  end
+  local carousel_ids = Store.normalize_carousel_ids(raw_carousel_ids)
+  if carousel_ids ~= nil then
+    next_runtime.carousel_ids = carousel_ids
+  end
+
+  local raw_carousel_index = persisted.carousel_index
+  if raw_carousel_index == nil then
+    raw_carousel_index = persisted.carouselIndex
+  end
+  if type(raw_carousel_index) == "number" and raw_carousel_index >= 1 then
+    next_runtime.carousel_index = math.floor(raw_carousel_index)
   end
 
   local raw_price_alerts = persisted.price_alerts ~= nil and persisted.price_alerts or persisted.priceAlerts
@@ -500,6 +576,10 @@ function Store.export_config(runtime, static)
     watch_list = runtime.watch_list,
     bar_coin = runtime.bar_coin,
     display_mode = runtime.display_mode,
+    carousel_enabled = runtime.carousel_enabled,
+    carousel_interval = runtime.carousel_interval,
+    carousel_ids = runtime.carousel_ids,
+    carousel_index = runtime.carousel_index,
     price_alerts = runtime.price_alerts,
     rapid_alert = runtime.rapid_alert,
     watch_list_schema_version = Store.SCHEMA_VERSION,
@@ -540,6 +620,10 @@ function Store.parse_imported(text)
     watch_list = nil,
     bar_coin = nil,
     display_mode = nil,
+    carousel_enabled = nil,
+    carousel_interval = nil,
+    carousel_ids = nil,
+    carousel_index = nil,
     price_alerts = nil,
     rapid_alert = nil,
     ignored = {},
@@ -561,6 +645,39 @@ function Store.parse_imported(text)
   local raw_display_mode = decoded.display_mode ~= nil and decoded.display_mode or decoded.displayMode
   if includes(Store.VALID_DISPLAY_MODES, raw_display_mode) then
     payload.display_mode = raw_display_mode
+  end
+
+  local raw_carousel_enabled = decoded.carousel_enabled
+  if raw_carousel_enabled == nil then
+    raw_carousel_enabled = decoded.carouselEnabled
+  end
+  if type(raw_carousel_enabled) == "boolean" then
+    payload.carousel_enabled = raw_carousel_enabled
+  end
+
+  local raw_carousel_interval = decoded.carousel_interval
+  if raw_carousel_interval == nil then
+    raw_carousel_interval = decoded.carouselInterval
+  end
+  if raw_carousel_interval ~= nil then
+    payload.carousel_interval = Store.normalize_carousel_interval(raw_carousel_interval)
+  end
+
+  local raw_carousel_ids = decoded.carousel_ids
+  if raw_carousel_ids == nil then
+    raw_carousel_ids = decoded.carouselIds
+  end
+  local carousel_ids = Store.normalize_carousel_ids(raw_carousel_ids)
+  if carousel_ids ~= nil then
+    payload.carousel_ids = carousel_ids
+  end
+
+  local raw_carousel_index = decoded.carousel_index
+  if raw_carousel_index == nil then
+    raw_carousel_index = decoded.carouselIndex
+  end
+  if type(raw_carousel_index) == "number" and raw_carousel_index >= 1 then
+    payload.carousel_index = math.floor(raw_carousel_index)
   end
 
   local raw_price_alerts = decoded.price_alerts ~= nil and decoded.price_alerts or decoded.priceAlerts
@@ -601,10 +718,21 @@ function Store.apply_imported(runtime, payload)
     return runtime
   end
 
+  -- `or` cannot be used for the boolean: importing `false` must switch the carousel
+  -- off, not fall back to the stored value.
+  local carousel_enabled = runtime.carousel_enabled
+  if payload.carousel_enabled ~= nil then
+    carousel_enabled = payload.carousel_enabled == true
+  end
+
   local next_runtime = {
     watch_list = payload.watch_list or runtime.watch_list,
     bar_coin = payload.bar_coin or runtime.bar_coin,
     display_mode = payload.display_mode or runtime.display_mode,
+    carousel_enabled = carousel_enabled,
+    carousel_interval = payload.carousel_interval or runtime.carousel_interval,
+    carousel_ids = payload.carousel_ids or runtime.carousel_ids,
+    carousel_index = payload.carousel_index or runtime.carousel_index,
     price_alerts = payload.price_alerts or runtime.price_alerts,
     rapid_alert = payload.rapid_alert or runtime.rapid_alert,
     watch_list_schema_version = Store.SCHEMA_VERSION,

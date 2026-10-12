@@ -81,7 +81,7 @@
     "search_empty": "No matching asset",
     "search_placeholder": "Enter an asset symbol to search (for example: btc, xau, aapl)",
     "search_results": "Search results",
-    "seconds": "seconds",
+    "seconds": "s",
     "static_note": "Data source, market type, proxy and refresh interval come from the host settings; everything else is edited here.",
     "unavailable": "Unavailable from this data source",
     "upper_price": "Upper price",
@@ -89,6 +89,14 @@
     "watch_list": "Watch list",
     "watch_list_tip": "Click an asset to add or remove it, and use arrows to reorder",
     "search_pending": "Searching...",
-    "search_note": "Availability is checked on demand; unrelated results are never listed."
+    "search_note": "Availability is checked on demand; unrelated results are never listed.",
+    "carousel": "Bar carousel",
+    "carousel_desc": "Rotate the bar asset through the followed assets; the mouse wheel steps it manually and restarts the interval.",
+    "carousel_enabled": "Auto-rotate",
+    "carousel_interval": "Interval",
+    "carousel_prev": "Previous asset",
+    "carousel_next": "Next asset",
+    "carousel_now": "On the bar now",
+    "carousel_follow_hint": "The follow toggle at the start of each watch-list row picks the rotation; with none followed, the whole watch list rotates."
   }
 }

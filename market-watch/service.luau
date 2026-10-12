@@ -7,7 +7,9 @@
 -- every other entry is a thin client:
 --
 --   published (this service owns them):
---     market.config       runtime + read-only configuration for the UI
+--     market.config       runtime + read-only configuration for the UI, including the
+--                         bar carousel block (enabled, interval, followed ids,
+--                         current rotation index and the entry on the bar)
 --     market.bar          the resolved bar instrument (id, symbols, availability)
 --     market.watch        the watch list resolved in order, for display
 --     market.instruments  instrument id -> instrument metadata (only what is used)
@@ -25,7 +27,13 @@
 --     market.cmd = { op = ..., nonce = ... }
 --     refresh / refresh_all / force_refresh / add_watch / remove_watch /
 --     move_watch / set_bar_coin / toggle_display_mode / set_price_alert /
---     set_rapid_alert / export_config / import_config / search
+--     set_rapid_alert / set_carousel / export_config / import_config / search
+--
+-- The bar carousel (auto-rotating the bar asset) is new capability, not a v4
+-- restoration: v4's BarWidget.qml had no wheel handler and Main.qml only ran a
+-- refresh Timer and a logo-retry Timer. It reuses this file's update() heartbeat
+-- rather than adding a timer, and it never issues a request of its own - advancing
+-- the rotation is a table lookup plus one publish.
 --
 -- ── Execution-budget rules this file obeys ──────────────────────────────────
 -- A single v5 callback has a CPU budget, and subprocess stdout is truncated at
@@ -95,6 +103,11 @@ local resolve_coingecko
 local set_quote_failure
 local bar_info
 local watch_rows
+local carousel_enabled
+local carousel_interval_seconds
+local carousel_entries
+local carousel_position_of
+local bar_reference
 
 -- ── Static configuration (read-only manifest settings) ──────────────────────
 
@@ -172,6 +185,9 @@ local busy = true
 local cycle_armed = false
 local next_cycle_at = 0
 local last_logo_sweep_at = 0
+-- 0 means "not armed yet": the next tick arms the interval without advancing, so
+-- enabling the carousel (or reloading with it on) does not jump immediately.
+local next_carousel_at = 0
 local search_payload = { query = "", results = {}, pending = false, nonce = 0 }
 local config_message = nil
 
@@ -224,6 +240,16 @@ local function public_config()
     watch_list = copy_list(runtime.watch_list),
     bar_coin = runtime.bar_coin,
     display_mode = runtime.display_mode,
+    -- `ids` is the *effective* followed set (watch-list order), never empty while the
+    -- watch list has entries: market.json may store an empty list as the shorthand for
+    -- "rotate everything", but the panel's follow toggles need the resolved set.
+    carousel = {
+      enabled = carousel_enabled(),
+      interval = carousel_interval_seconds(),
+      ids = copy_list(carousel_entries()),
+      index = carousel_position_of(carousel_entries(), bar_reference()) or 0,
+      entry = bar_reference() or "",
+    },
     price_alerts = copy_price_alerts(),
     rapid_alert = {
       enabled = rapid.enabled,
@@ -333,13 +359,170 @@ local function mark_unavailable(instrument)
   set_quote_failure(instrument, "unavailable", noctalia.tr("settings.unavailable"))
 end
 
+-- ── Bar carousel ────────────────────────────────────────────────────────────
+-- The bar shows one asset at a time; when the carousel is on it rotates through the
+-- followed subset of the watch list on the user's interval. `bar_coin` is never
+-- touched by the rotation - it stays the explicit choice the user made, and it is
+-- what the bar shows again the moment the carousel is switched off.
+
+carousel_enabled = function()
+  return runtime.carousel_enabled == true
+end
+
+carousel_interval_seconds = function()
+  return store.normalize_carousel_interval(runtime.carousel_interval)
+end
+
+-- The rotation is the followed subset intersected with the watch list, in watch-list
+-- order. Entries that were removed from the watch list therefore drop out on their
+-- own; an empty subset (or one whose assets all left) means "rotate everything".
+carousel_entries = function()
+  local list = runtime.watch_list
+  local followed = {}
+  local ids = runtime.carousel_ids
+  if type(ids) ~= "table" or #ids == 0 then
+    for _, reference in ipairs(list) do
+      table.insert(followed, reference)
+    end
+    return followed
+  end
+
+  local wanted = {}
+  for _, id in ipairs(ids) do
+    wanted[id] = true
+  end
+  for _, reference in ipairs(list) do
+    if wanted[reference] then
+      table.insert(followed, reference)
+    end
+  end
+  if #followed == 0 then
+    for _, reference in ipairs(list) do
+      table.insert(followed, reference)
+    end
+  end
+  return followed
+end
+
+carousel_position_of = function(entries, reference)
+  for index, entry in ipairs(entries) do
+    if entry == reference then
+      return index
+    end
+  end
+  return nil
+end
+
+-- "Unresolved" is this plugin's only unavailable state: a constructed or quoted
+-- instrument is usable, and one still being resolved (CoinGecko) already has a symbol
+-- to show, so it counts as usable too.
+local function carousel_is_usable(reference)
+  local instrument = instrument_for(reference)
+  if instrument == nil then
+    return pending_resolutions[reference] == true
+  end
+  return instrument.status ~= "unresolved"
+end
+
+-- Follows the rotation from the stored cursor, skipping entries the provider does not
+-- list. With the carousel on the bar must not sit on "--" while another followed asset
+-- has data, so the skip happens on every read rather than only on an advance.
+local function carousel_active_reference()
+  local entries = carousel_entries()
+  local count = #entries
+  if count == 0 then
+    return nil
+  end
+
+  local start = math.floor(alerts.to_number(runtime.carousel_index) or 1)
+  if start < 1 or start > count then
+    start = ((start - 1) % count) + 1
+  end
+
+  for offset = 0, count - 1 do
+    local index = ((start - 1 + offset) % count) + 1
+    local reference = entries[index]
+    if carousel_is_usable(reference) then
+      -- Remember where the skip landed so a manual step moves from what is on screen.
+      -- Deliberately not persisted: this runs on every publish, and a restart resumes
+      -- on the same asset anyway (the unusable one is skipped again).
+      runtime.carousel_index = index
+      return reference
+    end
+  end
+  return entries[start]
+end
+
+-- One notch of rotation, skipping unusable entries: the caller can rely on the cursor
+-- landing on something with data whenever anything followed has it.
+local function carousel_step(delta)
+  local entries = carousel_entries()
+  local count = #entries
+  local step = delta > 0 and 1 or -1
+  if count == 0 or delta == 0 then
+    return false
+  end
+
+  -- Start from what is on the bar: the skip in carousel_active_reference may already
+  -- have moved the cursor past an unavailable asset.
+  carousel_active_reference()
+  local start = math.floor(alerts.to_number(runtime.carousel_index) or 1)
+  if start < 1 or start > count then
+    start = ((start - 1) % count) + 1
+  end
+
+  for offset = 1, count do
+    local index = ((start - 1 + step * offset) % count + count) % count + 1
+    -- A full lap with nothing usable is better spent on the next entry than on no move.
+    if offset == count or carousel_is_usable(entries[index]) then
+      runtime.carousel_index = index
+      return true
+    end
+  end
+  return false
+end
+
+local function carousel_advance()
+  return carousel_step(1)
+end
+
+local function carousel_reset_timer()
+  next_carousel_at = 0
+end
+
+local function carousel_clamp_index()
+  local count = #carousel_entries()
+  local index = math.floor(alerts.to_number(runtime.carousel_index) or 1)
+  if count == 0 then
+    runtime.carousel_index = 1
+    return
+  end
+  if index < 1 or index > count then
+    runtime.carousel_index = ((index - 1) % count) + 1
+  end
+end
+
+-- The asset the bar should name right now: the rotation entry when the carousel is on,
+-- the user's explicit pick otherwise.
+bar_reference = function()
+  if carousel_enabled() then
+    local current = carousel_active_reference()
+    if current ~= nil then
+      return current
+    end
+  end
+  return runtime.bar_coin
+end
+
 bar_info = function()
-  local instrument = instrument_for(runtime.bar_coin)
+  -- The shape must not change: widget.luau renders exactly these keys.
+  local reference = bar_reference() or runtime.bar_coin
+  local instrument = instrument_for(reference)
   if instrument == nil then
     return {
-      id = runtime.bar_coin,
-      symbol = string.upper(store.trim(runtime.bar_coin)),
-      pending = pending_resolutions[runtime.bar_coin] == true,
+      id = reference,
+      symbol = string.upper(store.trim(reference)),
+      pending = pending_resolutions[reference] == true,
     }
   end
   return {
@@ -1247,6 +1430,16 @@ local function rewrite_watch_reference(from, to)
   end
   if from ~= to then
     rekey_alerts({ [from] = to })
+    -- The followed subset is matched against the watch list, so it has to follow the
+    -- symbol rewrite too; otherwise resolving a CoinGecko symbol would silently drop the
+    -- follow and fall back to rotating everything.
+    if type(runtime.carousel_ids) == "table" and #runtime.carousel_ids > 0 then
+      local next_ids = {}
+      for _, reference in ipairs(runtime.carousel_ids) do
+        table.insert(next_ids, reference == from and to or reference)
+      end
+      runtime.carousel_ids = store.normalize_watch_list(next_ids)
+    end
     changed = true
   end
   if changed then
@@ -1403,6 +1596,16 @@ local function remove_watch(id, index)
   end
   runtime.rapid_alert.instrument_ids = kept
 
+  -- The rotation follows the watch list, so an asset that left stops being followed.
+  -- (carousel_entries() would drop it anyway; this keeps market.json honest.)
+  local followed = {}
+  for _, reference in ipairs(runtime.carousel_ids or {}) do
+    if not removed_ids[reference] then
+      table.insert(followed, reference)
+    end
+  end
+  runtime.carousel_ids = followed
+
   persist()
   publish()
 end
@@ -1427,14 +1630,59 @@ local function move_watch(id, delta)
   publish()
 end
 
+-- Which way the wheel travelled. The widget steps exactly one entry of market.watch and
+-- wraps at both ends, so the requested entry is the neighbour of whatever is on screen:
+-- whichever neighbour relation holds gives the sign.
+local function carousel_direction_towards(reference)
+  local count = #runtime.watch_list
+  if count < 2 then
+    return 0
+  end
+  local shown = carousel_active_reference() or runtime.bar_coin
+  local shown_position = carousel_position_of(runtime.watch_list, shown)
+  local target_position = carousel_position_of(runtime.watch_list, reference)
+  if shown_position == nil or target_position == nil then
+    return 1
+  end
+  if (shown_position % count) + 1 == target_position then
+    return 1
+  end
+  if ((shown_position - 2) % count) + 1 == target_position then
+    return -1
+  end
+  return target_position > shown_position and 1 or -1
+end
+
 local function set_bar_coin(id)
   local reference = store.normalize_reference(id)
   local index = find_watch_index(reference)
   if index == nil then
     return
   end
-  -- Store the entry as it is listed today, so the bar and the watch list agree.
+  -- Store the entry as it is listed today, so the bar and the watch list agree. This is
+  -- the user's explicit choice: the rotation never writes it, and switching the
+  -- carousel off shows it again.
   runtime.bar_coin = runtime.watch_list[index]
+
+  if not carousel_enabled() then
+    persist()
+    publish()
+    return
+  end
+
+  -- Carousel on: the same command now moves the rotation. widget.luau cannot know about
+  -- the carousel - it walks market.watch and sends the neighbouring entry - so the
+  -- service translates that absolute pick into a rotation move: a followed entry
+  -- becomes the cursor, an unfollowed one steps the rotation in the direction the
+  -- wheel travelled. Either way the interval restarts, so the manual choice is never
+  -- overridden by an advance the user did not cause.
+  local position = carousel_position_of(carousel_entries(), runtime.bar_coin)
+  if position ~= nil then
+    runtime.carousel_index = position
+  else
+    carousel_step(carousel_direction_towards(runtime.bar_coin))
+  end
+  carousel_reset_timer()
   persist()
   publish()
 end
@@ -1517,6 +1765,85 @@ local function set_rapid_alert(command)
   runtime.rapid_alert = alerts.normalize_rapid_alert(next_alert)
   persist()
   publish()
+end
+
+-- One op for the whole feature: the settings panel sends whichever fields changed,
+-- exactly like set_rapid_alert. `toggle_id` works on the effective followed set, so
+-- un-following one asset out of the empty-list shorthand produces an explicit list of
+-- the others rather than a list containing only that asset.
+local function set_carousel(command)
+  local changed = false
+
+  if command.enabled ~= nil then
+    local enabled = command.enabled == true
+    if enabled ~= carousel_enabled() then
+      runtime.carousel_enabled = enabled
+      changed = true
+      if enabled then
+        -- Do not jump on enable: put the cursor on the asset already on the bar when
+        -- that asset is part of the rotation.
+        local position = carousel_position_of(carousel_entries(), store.normalize_reference(runtime.bar_coin))
+        if position ~= nil then
+          runtime.carousel_index = position
+        end
+      end
+    end
+  end
+
+  if command.interval ~= nil then
+    local interval = store.normalize_carousel_interval(command.interval)
+    if interval ~= runtime.carousel_interval then
+      runtime.carousel_interval = interval
+      changed = true
+    end
+  end
+
+  local ids = store.normalize_carousel_ids(command.ids)
+  if ids ~= nil then
+    runtime.carousel_ids = ids
+    changed = true
+  end
+
+  if command.toggle_id ~= nil then
+    local wanted = store.normalize_reference(command.toggle_id)
+    if wanted ~= "" then
+      local next_ids = {}
+      local found = false
+      for _, reference in ipairs(carousel_entries()) do
+        if reference == wanted then
+          found = true
+        else
+          table.insert(next_ids, reference)
+        end
+      end
+      if not found then
+        table.insert(next_ids, wanted)
+      end
+      runtime.carousel_ids = next_ids
+      changed = true
+    end
+  end
+
+  local stepped = false
+  if command.step ~= nil then
+    local delta = tonumber(command.step)
+    -- Stepping while the carousel is off would move state the user cannot see, so the
+    -- panel disables its arrows and the service ignores the op.
+    if delta ~= nil and delta ~= 0 and carousel_enabled() then
+      stepped = carousel_step(delta)
+    end
+  end
+
+  -- Any manual change restarts the interval: the user's action must not be undone by
+  -- an advance that was already due.
+  carousel_reset_timer()
+  if changed then
+    carousel_clamp_index()
+  end
+  if changed or stepped then
+    persist()
+    publish()
+  end
 end
 
 local function set_config_message(key, detail, is_error)
@@ -1610,6 +1937,8 @@ local function handle_command(command)
     set_price_alert(command.id, command.enabled, command.upper, command.lower)
   elseif op == "set_rapid_alert" then
     set_rapid_alert(command)
+  elseif op == "set_carousel" then
+    set_carousel(command)
   elseif op == "export_config" then
     export_config()
   elseif op == "import_config" then
@@ -1652,6 +1981,23 @@ local function canonicalize_watch_list()
     runtime.bar_coin = runtime.watch_list[1]
     changed = true
   end
+
+  -- The followed subset is matched against the watch list, so a stored bare symbol has
+  -- to become the same instrument id here or the subset would match nothing and
+  -- silently fall back to rotating everything.
+  if type(runtime.carousel_ids) == "table" and #runtime.carousel_ids > 0 then
+    local next_ids = {}
+    for _, reference in ipairs(runtime.carousel_ids) do
+      local instrument = instrument_for(reference)
+      table.insert(next_ids, instrument ~= nil and instrument.id or reference)
+    end
+    local normalized = store.normalize_watch_list(next_ids)
+    if table.concat(normalized, "\n") ~= table.concat(runtime.carousel_ids, "\n") then
+      changed = true
+    end
+    runtime.carousel_ids = normalized
+  end
+
   if changed then
     persist()
   end
@@ -1708,6 +2054,17 @@ local function rebind_watch_list()
     runtime.bar_coin = runtime.watch_list[1]
   end
   rekey_alerts(remap)
+
+  -- The followed set is made of the same references as the watch list, so it has to be
+  -- rebound through the same mapping or a provider switch would unfollow everything.
+  if type(runtime.carousel_ids) == "table" and #runtime.carousel_ids > 0 then
+    local next_ids = {}
+    for _, reference in ipairs(runtime.carousel_ids) do
+      table.insert(next_ids, rebind(reference))
+    end
+    runtime.carousel_ids = store.normalize_watch_list(next_ids)
+  end
+  carousel_clamp_index()
   persist()
 end
 
@@ -1745,6 +2102,7 @@ function onConfigChanged()
 
   if provider_changed then
     rebind_watch_list()
+    carousel_reset_timer()
     prune_instruments()
     quotes = {}
     status = {}
@@ -1845,6 +2203,23 @@ function update()
     refresh_market_data(false)
   end
 
+  -- Bar carousel. It runs on this same heartbeat - no second timer - and advances on
+  -- schedule whether or not a panel is open. The advance is a table lookup plus the
+  -- publish below.
+  if carousel_enabled() and #runtime.watch_list > 0 then
+    if next_carousel_at == 0 then
+      next_carousel_at = now + carousel_interval_seconds() * 1000
+    elseif now >= next_carousel_at then
+      next_carousel_at = now + carousel_interval_seconds() * 1000
+      if carousel_advance() then
+        publish()
+      end
+    end
+  elseif next_carousel_at ~= 0 then
+    -- Switched off, or nothing to rotate: cancel the pending advance.
+    next_carousel_at = 0
+  end
+
   -- Keep draining the queue between cycles: a worker slot may have freed up.
   pump_queue()
 
@@ -1872,8 +2247,8 @@ end
 runtime = store.load_runtime()
 instruments = store.load_instruments()
 load_tv_logo_ids()
--- Resolve whatever the stored list still describes as a bare symbol (the seeded
--- default, or a market.json written by an earlier version) before publishing.
+-- Resolve whatever the stored list still describes as a bare symbol (the built-in
+-- default list, or a market.json written by an earlier version) before publishing.
 canonicalize_watch_list()
 
 -- Publish before any network call so the widget can render its asset immediately,

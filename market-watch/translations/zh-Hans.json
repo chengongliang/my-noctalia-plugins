@@ -89,6 +89,14 @@
     "watch_list": "自选资产列表",
     "watch_list_tip": "点击资产名称添加或移除，使用箭头调整顺序",
     "search_pending": "正在搜索…",
-    "search_note": "按需检查可用性，不会列出无关结果。"
+    "search_note": "按需检查可用性，不会列出无关结果。",
+    "carousel": "状态栏轮播",
+    "carousel_desc": "让状态栏在小部件自动轮播已关注的资产；滚轮可手动切换并重新计时。",
+    "carousel_enabled": "自动切换",
+    "carousel_interval": "间隔",
+    "carousel_prev": "上一个资产",
+    "carousel_next": "下一个资产",
+    "carousel_now": "当前显示",
+    "carousel_follow_hint": "每一行开头的关注开关决定轮播范围；若一个都不关注，则轮播整个自选列表。"
   }
 }

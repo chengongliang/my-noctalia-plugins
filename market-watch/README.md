@@ -67,6 +67,20 @@ State and files below). There is no other companion program.
 6. Scroll the wheel over the bar widget to walk the displayed asset along the watch
    list, in the order the settings panel lists it. It wraps at both ends, so one
    gesture reaches every asset; with a single watched asset there is nothing to cycle.
+7. To stop choosing by hand, turn on the **bar carousel** in the settings panel: the
+   widget then rotates the displayed asset on its own, every *interval* seconds
+   (3-300, default 10). The rotation covers the assets you **follow** — the toggle on
+   the left of each watch-list row — and with none followed it rotates the whole watch
+   list. Use the `<` and `>` buttons in the carousel section to step it by hand, or the
+   wheel: while the carousel is on, a wheel step moves the rotation instead of only the
+   pill, and restarts the interval so your choice is not overridden an instant later.
+   The carousel advances whether or not a panel is open, and it never issues a network
+   request of its own.
+
+The carousel and the wheel share one piece of state, `bar_coin`: the carousel never
+writes it, so switching the carousel off returns the bar to the asset you last picked.
+An asset that is not tradable is skipped while at least one followed asset is, so the
+bar does not sit on `--`, and an asset removed from the watch list stops rotating.
 
 Bar gestures are user configuration in Noctalia v5. This plugin ships four defaults:
 `left = "none"` so the widget's own click handler opens the market panel,
@@ -97,7 +111,9 @@ Everything else is edited in the **settings panel** and stored by the service in
 - the status bar display mode (full text or compact price only),
 - the per-asset upper and lower price alerts,
 - the rapid rise/fall rule: enable, threshold percent, observation window, cooldown
-  and the monitored assets.
+  and the monitored assets,
+- the bar carousel: whether it rotates, the interval in seconds, and which assets it
+  follows (empty means the whole watch list).
 
 Configuration import and export use `~/Downloads/crypto-market-config.json`, the same
 path as the v4 plugin. Export writes that file; import reads it and applies the
@@ -158,7 +174,7 @@ never replaces the last good quote.
 
 | Path | Written by | Contents |
 | --- | --- | --- |
-| `pluginDataDir()/market.json` | the service | Watch list, bar asset, display mode, both alert rules, schema version. |
+| `pluginDataDir()/market.json` | the service | Watch list, bar asset, display mode, both alert rules, the bar carousel (enabled, interval, followed assets, current index), schema version. |
 | `pluginDataDir()/instruments.json` | the service | Resolved instrument metadata for the assets in use. |
 | `pluginDataDir()/logos/<instrument>.<png\|svg>` | the service | Cached asset logos. |
 | `pluginDataDir()/tradingview-logoids.json` | the service | Resolved TradingView logo ids, so the symbol search runs at most once per asset. |
@@ -194,6 +210,7 @@ because v5 removed or replaced them:
 | Resolution against the provider's complete catalogue | Not possible in v5 (one decode may not exceed ~100 KB, and captured stdout is capped at 1 MiB). Symbols are built on demand instead; see [Data sources](#data-sources). |
 | Search across the whole instrument universe | Answered from the CoinGecko and TradingView search endpoints, so a query only finds instruments those endpoints know about. |
 | A catalogue failure stuck the panel on "loading" | There is no catalogue step any more, so a plugin-wide error is limited to a missing `curl`; everything else is per-instrument. |
+| (no equivalent: v4 could only ever show the one asset picked in its settings) | **New in v5:** the bar carousel rotates the followed watch-list assets on an interval, with the wheel stepping it by hand. |
 
 The exported configuration is accepted in either spelling: the port's snake_case keys
 or the v4 camelCase names.

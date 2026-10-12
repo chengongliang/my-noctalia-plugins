@@ -6,7 +6,7 @@
 -- back as a setting. Everything runtime-mutable therefore moves into this panel and
 -- is persisted by the service in pluginDataDir()/market.json:
 --
---   watch list, bar_coin, display_mode, price_alerts, rapid_alert
+--   watch list, bar_coin, display_mode, price_alerts, rapid_alert, carousel
 --
 -- The read-only settings (data source, market type, proxy, refresh interval, colour
 -- scheme) stay in the host settings window; this panel names them so the user knows
@@ -74,6 +74,28 @@ local function rapid_selected(id)
     end
   end
   return false
+end
+
+-- The followed subset arrives resolved (never empty while the watch list has entries):
+-- an empty list in market.json means "rotate everything", and the service publishes the
+-- effective set so the toggles here can simply ask whether the id is in it.
+local function carousel_followed(id)
+  local carousel = (config and config.carousel) or {}
+  local ids = carousel.ids
+  if type(ids) ~= "table" or #ids == 0 then
+    return true
+  end
+  for _, instrument_id in ipairs(ids) do
+    if instrument_id == id then
+      return true
+    end
+  end
+  return false
+end
+
+local function carousel_state()
+  return (config and config.carousel)
+    or { enabled = false, interval = 10, ids = {}, index = 0, entry = "" }
 end
 
 local function section(title, description, children)
@@ -175,6 +197,15 @@ local function watch_section()
     -- Fixed-width arrow/trash buttons keep every row aligned, exactly like v4's
     -- NIconButton row, and stay keyboard reachable through the tab order.
     table.insert(rows, ui.row({ key = "watch_" .. tostring(row.id), align = "center", gap = 6 }, {
+      -- Follow toggle: this is the carousel's subset, so it belongs on the row it
+      -- applies to rather than in a separate list that could drift out of order.
+      ui.toggle({
+        key = "follow_" .. tostring(row.id),
+        checked = carousel_followed(row.id),
+        onChange = function()
+          send({ op = "set_carousel", toggle_id = row.id })
+        end,
+      }),
       ui.label({ text = label, flexGrow = 1, color = unavailable and "on_surface_variant" or "on_surface" }),
       ui.button({
         key = "up_" .. tostring(row.id),
@@ -264,6 +295,82 @@ local function bar_section()
         end,
       }),
     }),
+  })
+end
+
+-- ── Bar carousel ────────────────────────────────────────────────────────────
+-- New capability, not a v4 restoration: v4 could only show one fixed asset. The
+-- service owns the timing; this section only edits the runtime state it publishes.
+
+local function carousel_section()
+  local carousel = carousel_state()
+  local enabled = carousel.enabled == true
+  local total = #(carousel.ids or {})
+
+  return ui.column({ gap = 10 }, {
+    ui.row({ align = "center", gap = 8 }, {
+      ui.toggle({
+        key = "carousel_enabled",
+        checked = enabled,
+        onChange = function(value)
+          send({ op = "set_carousel", enabled = value == "true" })
+        end,
+      }),
+      ui.label({ text = tr("settings.carousel_enabled"), flexGrow = 1, color = "on_surface" }),
+    }),
+    -- The interval input is uncontrolled, so the effective (clamped) value is echoed
+    -- beside it, exactly like the rapid-alert fields: typing 1 lands on 3 and says so.
+    ui.row({ align = "center", gap = 8 }, {
+      labelled_input(
+        tr("settings.carousel_interval") .. " (" .. tr("settings.seconds") .. ")",
+        "carousel_interval",
+        tostring(carousel.interval),
+        "",
+        function(value)
+          send({ op = "set_carousel", interval = value })
+        end
+      ),
+      ui.label({
+        text = tostring(carousel.interval) .. tr("settings.seconds"),
+        fontSize = 11,
+        color = "on_surface_variant",
+      }),
+    }),
+    ui.row({ align = "center", gap = 8 }, {
+      ui.button({
+        key = "carousel_prev",
+        glyph = "chevron-left",
+        variant = "ghost",
+        tooltip = tr("settings.carousel_prev"),
+        enabled = enabled,
+        onClick = function()
+          send({ op = "set_carousel", step = -1 })
+        end,
+      }),
+      ui.button({
+        key = "carousel_next",
+        glyph = "chevron-right",
+        variant = "ghost",
+        tooltip = tr("settings.carousel_next"),
+        enabled = enabled,
+        onClick = function()
+          send({ op = "set_carousel", step = 1 })
+        end,
+      }),
+      ui.label({
+        text = tr("settings.carousel_now")
+          .. ": "
+          .. ((carousel.entry or "") ~= "" and carousel.entry or tr("panel.no_data"))
+          .. "  "
+          .. tostring(math.max(0, carousel.index or 0))
+          .. "/"
+          .. tostring(total),
+        fontSize = 11,
+        color = "on_surface_variant",
+        flexGrow = 1,
+      }),
+    }),
+    ui.label({ text = tr("settings.carousel_follow_hint"), fontSize = 11, color = "on_surface_variant" }),
   })
 end
 
@@ -444,6 +551,8 @@ local function render()
     }),
     ui.separator(),
     section(tr("settings.bar"), tr("settings.bar_coin_desc"), { bar_section() }),
+    ui.separator(),
+    section(tr("settings.carousel"), tr("settings.carousel_desc"), { carousel_section() }),
     ui.separator(),
     section(tr("settings.price_alerts"), tr("settings.price_alerts_desc"), { price_alerts_section() }),
     ui.separator(),
