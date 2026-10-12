@@ -2,7 +2,7 @@
 
 A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
 
-![Version](https://img.shields.io/badge/version-1.3.1-blue)
+![Version](https://img.shields.io/badge/version-1.3.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 ## Features
@@ -56,7 +56,9 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **Color Scheme**: Red rises (Chinese style) or green rises (Western style)
 - **Refresh Interval**: Set update frequency from 1 to 60 seconds
 - **Language**: Switch the plugin interface between English and Simplified Chinese
-- **Config Management**: Export/import settings to/from `~/Downloads/crypto-market-config.json`
+- **Config Management**: Export/import settings to/from `~/Downloads/market-watch-config.json`
+
+For exports from earlier versions, rename the file to `market-watch-config.json` in `~/Downloads/` before importing. Catalog and logo caches are rebuilt under `~/.cache/noctalia/market-watch/`; existing settings remain intact.
 
 ## Configuration
 
@@ -128,12 +130,12 @@ Instruments are discovered from the selected provider catalog. Search results us
 ### Logos not showing
 - Logos are resolved from provider metadata or an exact external match and cached on first use
 - If no trustworthy image is available, the asset symbol is shown as a text fallback
-- Check cache directory: `ls ~/.cache/noctalia/crypto-market/logos/`
+- Check cache directory: `ls ~/.cache/noctalia/market-watch/logos/`
 - If behind a firewall, configure proxy URL in settings
 
 ### Plugin not loading
 1. Verify JSON syntax: `jq . manifest.json`
-2. Check plugin is enabled: `cat ~/.config/noctalia/plugins.json | jq '.states["crypto-market"]'`
+2. Check plugin is enabled: `cat ~/.config/noctalia/plugins.json | jq '.states["market-watch"]'`
 3. Check Noctalia logs for errors
 
 ### Rate limit errors

@@ -33,7 +33,7 @@ Item {
   property var priceAlerts: AlertEngine.normalizePriceAlerts(cfg.priceAlerts ?? defaults.priceAlerts ?? ({}))
   property var rapidAlert: AlertEngine.normalizeRapidAlert(cfg.rapidAlert ?? defaults.rapidAlert ?? ({}))
   readonly property var marketTypes: ["spot", "perpetual"]
-  readonly property string configPath: Quickshell.env("HOME") + "/Downloads/crypto-market-config.json"
+  readonly property string configPath: Quickshell.env("HOME") + "/Downloads/market-watch-config.json"
   property var translations: ({
     "en": {
       "barWidget": {
@@ -84,12 +84,12 @@ Item {
         "barScrollIntervalDesc": "How long each asset stays visible (2-60 seconds)",
         "colorScheme": "Color scheme",
         "colorSchemeDesc": "Select the color scheme for price changes",
-        "configExported": "Configuration exported to ~/Downloads/crypto-market-config.json",
+        "configExported": "Configuration exported to ~/Downloads/market-watch-config.json",
         "configImportFailed": "Failed to import configuration",
         "configImportMissing": "Configuration file was not found or is empty",
-        "configImported": "Configuration imported from ~/Downloads/crypto-market-config.json",
+        "configImported": "Configuration imported from ~/Downloads/market-watch-config.json",
         "configMgmt": "Configuration",
-        "configPath": "Config file path: ~/Downloads/crypto-market-config.json",
+        "configPath": "Config file path: ~/Downloads/market-watch-config.json",
         "dataSource": "Data source",
         "dataSourceDesc": "Select the market data source",
         "displayMode": "Status bar display mode",
@@ -188,12 +188,12 @@ Item {
         "barScrollIntervalDesc": "每个资产的停留时长（2–60 秒）",
         "colorScheme": "涨跌配色",
         "colorSchemeDesc": "选择涨跌颜色方案",
-        "configExported": "配置已导出到 ~/Downloads/crypto-market-config.json",
+        "configExported": "配置已导出到 ~/Downloads/market-watch-config.json",
         "configImportFailed": "导入配置失败",
         "configImportMissing": "配置文件不存在或内容为空",
-        "configImported": "已从 ~/Downloads/crypto-market-config.json 导入配置",
+        "configImported": "已从 ~/Downloads/market-watch-config.json 导入配置",
         "configMgmt": "配置管理",
-        "configPath": "配置文件路径: ~/Downloads/crypto-market-config.json",
+        "configPath": "配置文件路径: ~/Downloads/market-watch-config.json",
         "dataSource": "数据源",
         "dataSourceDesc": "选择行情数据来源",
         "displayMode": "状态栏显示模式",
@@ -269,11 +269,11 @@ Item {
   property int activeQuoteCount: 0
   readonly property int maxConcurrentQuotes: 4
   property var quoteQueue: []
-  property string catalogCacheDir: Quickshell.env("HOME") + "/.cache/noctalia/crypto-market/catalogs"
+  property string catalogCacheDir: Quickshell.env("HOME") + "/.cache/noctalia/market-watch/catalogs"
   property string catalogCachePath: catalogCacheDir + "/" + dataSource + "-" + (dataSource === "coingecko" ? "spot" : marketType) + ".json"
 
   // Logo 管理
-  property string logoDir: Quickshell.env("HOME") + "/.cache/noctalia/crypto-market/logos"
+  property string logoDir: Quickshell.env("HOME") + "/.cache/noctalia/market-watch/logos"
   property var logoCache: ({})
   property var logoFailures: ({})
   property bool logosReady: false
@@ -373,7 +373,7 @@ Item {
       root.translations = next;
       root.refreshNonce++;
     } catch (e) {
-      Logger.w("CryptoMarket", "Failed to parse translation file for " + lang + ": " + e);
+      Logger.w("MarketWatch", "Failed to parse translation file for " + lang + ": " + e);
     }
   }
 
@@ -529,7 +529,7 @@ Item {
       if (exitCode === 0) {
         root.logosReady = true;
       } else {
-        Logger.w("CryptoMarket", "Failed to create logo cache directory: " + String(stderr.text));
+        Logger.w("MarketWatch", "Failed to create logo cache directory: " + String(stderr.text));
       }
     }
   }
@@ -576,7 +576,7 @@ Item {
           });
           finalizeProc.running = true;
         } else {
-          Logger.w("CryptoMarket", "Failed to download logo for " + cacheKey + ": " + String(proc.stderr.text));
+          Logger.w("MarketWatch", "Failed to download logo for " + cacheKey + ": " + String(proc.stderr.text));
           callback(false);
         }
         proc.destroy();
@@ -671,11 +671,11 @@ Item {
             root.searchTradingViewLogo(instrument, cacheKey);
           }
         } catch (e) {
-          Logger.w("CryptoMarket", "Failed to parse logo search response for " + id + ": " + e);
+          Logger.w("MarketWatch", "Failed to parse logo search response for " + id + ": " + e);
           root.searchTradingViewLogo(instrument, cacheKey);
         }
       } else {
-        Logger.w("CryptoMarket", "Failed to search logo for " + id + ": " + String(searchProc.stderr.text));
+        Logger.w("MarketWatch", "Failed to search logo for " + id + ": " + String(searchProc.stderr.text));
         root.searchTradingViewLogo(instrument, cacheKey);
       }
       searchProc.destroy();
@@ -709,11 +709,11 @@ Item {
             markLogoFailed(id);
           }
         } catch (e) {
-          Logger.w("CryptoMarket", "Failed to parse TradingView logo search response for " + id + ": " + e);
+          Logger.w("MarketWatch", "Failed to parse TradingView logo search response for " + id + ": " + e);
           markLogoFailed(id);
         }
       } else {
-        Logger.w("CryptoMarket", "Failed to search TradingView logo for " + id + ": " + String(searchProc.stderr.text));
+        Logger.w("MarketWatch", "Failed to search TradingView logo for " + id + ": " + String(searchProc.stderr.text));
         markLogoFailed(id);
       }
       searchProc.destroy();
@@ -759,7 +759,7 @@ Item {
       }
       root.tvLogoIds = next;
     } catch (e) {
-      Logger.w("CryptoMarket", "Failed to parse TradingView logoid cache: " + e);
+      Logger.w("MarketWatch", "Failed to parse TradingView logoid cache: " + e);
     }
   }
 
@@ -1034,7 +1034,7 @@ Item {
       "price": root.formatPrice(quote.close)
     });
     ToastService.showNotice(root.tr("notifications.priceAlertTitle"), body, trigger.direction === "upper" ? "arrow-up" : "arrow-down");
-    Logger.i("CryptoMarket", "Price alert [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.id + "] " + trigger.direction + " at " + quote.close);
+    Logger.i("MarketWatch", "Price alert [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.id + "] " + trigger.direction + " at " + quote.close);
   }
 
   function evaluatePriceAlertForQuote(instrument, quote) {
@@ -1056,7 +1056,7 @@ Item {
       "window": windowMinutes
     });
     ToastService.showNotice(root.tr("notifications.rapidAlertTitle"), body, "bell-ringing");
-    Logger.i("CryptoMarket", "Rapid alert [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.id + "] " + trigger.direction + " " + trigger.changePercent.toFixed(2) + "%");
+    Logger.i("MarketWatch", "Rapid alert [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.id + "] " + trigger.direction + " " + trigger.changePercent.toFixed(2) + "%");
   }
 
   function evaluateRapidAlertForQuote(instrument, quote) {
@@ -1095,7 +1095,7 @@ Item {
     root.quoteStates = nextStates;
     root.isLoading = false;
     root.refreshNonce++;
-    Logger.w("CryptoMarket", "Quote failed [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.exchangeSymbol + "] " + code + ": " + message);
+    Logger.w("MarketWatch", "Quote failed [" + root.dataSource + "/" + instrument.marketType + "/" + instrument.exchangeSymbol + "] " + code + ": " + message);
   }
 
   // 格式化价格
@@ -1501,7 +1501,7 @@ Item {
       if (cache.provider !== root.dataSource || cache.marketType !== effectiveType || !Array.isArray(cache.instruments)) return;
       root.setInstrumentCatalog(cache.instruments, true, cache.updatedAt);
     } catch (e) {
-      Logger.w("CryptoMarket", "Failed to parse cached instrument catalog: " + e);
+      Logger.w("MarketWatch", "Failed to parse cached instrument catalog: " + e);
     }
   }
 
@@ -1521,7 +1521,7 @@ Item {
       root.isLoading = false;
       root.errorMessage = root.tr("panel.catalogError");
     }
-    Logger.w("CryptoMarket", message);
+    Logger.w("MarketWatch", message);
   }
 
   Process {
@@ -1533,7 +1533,7 @@ Item {
         && root.catalogRequestProvider === root.dataSource
         && root.catalogRequestMarketType === (root.dataSource === "coingecko" ? "spot" : root.marketType);
       if (!requestIsCurrent) {
-        Logger.d("CryptoMarket", "Discarded obsolete instrument catalog response [" + root.catalogRequestProvider + "/" + root.catalogRequestMarketType + "]");
+        Logger.d("MarketWatch", "Discarded obsolete instrument catalog response [" + root.catalogRequestProvider + "/" + root.catalogRequestMarketType + "]");
       } else if (exitCode === 0) {
         try {
           const text = String(stdout.text);

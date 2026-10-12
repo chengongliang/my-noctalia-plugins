@@ -2,7 +2,7 @@
 
 Noctalia Shell 的实时行情监控插件，支持多个交易所的加密货币现货价格和已上线的 USDT 永续合约价格。
 
-![版本](https://img.shields.io/badge/版本-1.3.1-blue)
+![版本](https://img.shields.io/badge/版本-1.3.3-blue)
 ![许可证](https://img.shields.io/badge/许可证-MIT-green)
 
 ## 功能特性
@@ -56,7 +56,9 @@ cp -r market-watch ~/.config/noctalia/plugins/
 - **涨跌配色**：红涨绿跌（中国风格）或绿涨红跌（西方风格）
 - **刷新频率**：设置更新间隔，1 到 60 秒
 - **界面语言**：在英文和简体中文之间切换插件界面
-- **配置管理**：导出/导入设置到 `~/Downloads/crypto-market-config.json`
+- **配置管理**：导出/导入设置到 `~/Downloads/market-watch-config.json`
+
+导入旧版本导出的配置前，请将文件重命名为 `market-watch-config.json` 并放到 `~/Downloads/`。资产目录和 Logo 缓存会在 `~/.cache/noctalia/market-watch/` 下重新生成，已有设置不受影响。
 
 ## 配置
 
@@ -128,12 +130,12 @@ cp -r market-watch ~/.config/noctalia/plugins/
 ### Logo 不显示
 - Logo 会优先从数据源元数据或精确外部匹配中解析，并在首次使用时缓存
 - 如果没有可靠图片，界面会显示资产代码的文字缩写
-- 检查缓存目录：`ls ~/.cache/noctalia/crypto-market/logos/`
+- 检查缓存目录：`ls ~/.cache/noctalia/market-watch/logos/`
 - 如果在防火墙后面，在设置中配置代理地址
 
 ### 插件未加载
 1. 验证 JSON 语法：`jq . manifest.json`
-2. 检查插件是否启用：`cat ~/.config/noctalia/plugins.json | jq '.states["crypto-market"]'`
+2. 检查插件是否启用：`cat ~/.config/noctalia/plugins.json | jq '.states["market-watch"]'`
 3. 检查 Noctalia 日志中的错误信息
 
 ### 速率限制错误
