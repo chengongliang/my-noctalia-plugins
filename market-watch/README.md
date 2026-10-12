@@ -69,7 +69,7 @@ State and files below). There is no other companion program.
    gesture reaches every asset; with a single watched asset there is nothing to cycle.
 7. To stop choosing by hand, turn on the **bar carousel** in the settings panel: the
    widget then rotates the displayed asset on its own, every *interval* seconds
-   (3-300, default 10). The rotation covers the assets you **follow** — the toggle on
+   (2-60, default 5). The rotation covers the assets you **follow** — the toggle on
    the left of each watch-list row — and with none followed it rotates the whole watch
    list. Use the `<` and `>` buttons in the carousel section to step it by hand, or the
    wheel: while the carousel is on, a wheel step moves the rotation instead of only the
@@ -210,7 +210,8 @@ because v5 removed or replaced them:
 | Resolution against the provider's complete catalogue | Not possible in v5 (one decode may not exceed ~100 KB, and captured stdout is capped at 1 MiB). Symbols are built on demand instead; see [Data sources](#data-sources). |
 | Search across the whole instrument universe | Answered from the CoinGecko and TradingView search endpoints, so a query only finds instruments those endpoints know about. |
 | A catalogue failure stuck the panel on "loading" | There is no catalogue step any more, so a plugin-wide error is limited to a missing `curl`; everything else is per-instrument. |
-| (no equivalent: v4 could only ever show the one asset picked in its settings) | **New in v5:** the bar carousel rotates the followed watch-list assets on an interval, with the wheel stepping it by hand. |
+| The bar ticker: `barWatchList` + `barScrollInterval`, driven by a `Timer` and a slide-up/fade `NumberAnimation` | Ported as the bar carousel (`carousel_ids` + `carousel_interval`): it rotates the followed assets on a 2-60 s interval. Two differences. The slide animation is not reproduced, because v5 has no animation primitives - this is the same instant swap v4 degraded to when its animation duration was 0. And an empty followed set rotates the whole watch list rather than nothing. |
+| No wheel handling at all (absent from `BarWidget.qml`, `Main.qml` and `Panel.qml`) | **New in v5:** the wheel steps the bar asset, and steps the rotation while the carousel is on. |
 
 The exported configuration is accepted in either spelling: the port's snake_case keys
 or the v4 camelCase names.

@@ -34,9 +34,11 @@ Store.VALID_SOURCES = { "huobi", "binance", "okx", "coingecko" }
 -- bounds are deliberately wide enough to be useful (3 s is about as fast as a bar
 -- should flicker) and narrow enough that a typo cannot turn the bar into a strobe or
 -- leave it looking broken; v4 clamped its numeric settings the same way.
-Store.CAROUSEL_DEFAULT_SECONDS = 10
-Store.CAROUSEL_MIN_SECONDS = 3
-Store.CAROUSEL_MAX_SECONDS = 300
+-- v4's barScrollInterval was 5 s clamped to 2..60; the same numbers are kept so an
+-- existing habit carries over unchanged.
+Store.CAROUSEL_DEFAULT_SECONDS = 5
+Store.CAROUSEL_MIN_SECONDS = 2
+Store.CAROUSEL_MAX_SECONDS = 60
 Store.VALID_MARKET_TYPES = { "spot", "perpetual" }
 Store.VALID_DISPLAY_MODES = { "text", "compact" }
 
