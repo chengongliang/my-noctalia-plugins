@@ -458,6 +458,17 @@ check_equal(providers.format_change(-5.5), "-5.50%", "format_change keeps a fall
 check_equal(providers.price_color(true, false, true), "#39c38c", "green rises by default")
 check_equal(providers.price_color(true, true, true), "#ff704b", "red rises when configured")
 check_equal(providers.price_color(true, false, false), "#888888", "missing data uses the neutral colour")
+-- An explicit dark flag must not change the v4 behaviour.
+check_equal(providers.price_color(true, false, true, true), "#39c38c", "dark mode keeps the v4 green")
+check_equal(providers.price_color(false, false, true, true), "#ff704b", "dark mode keeps the v4 red")
+-- A light palette needs darker shades: the v4 pastels sit at ~1.1:1 on a light surface.
+check_equal(providers.price_color(true, false, true, false), "#0a5c39", "light mode darkens the green")
+check_equal(providers.price_color(false, false, true, false), "#9c2318", "light mode darkens the red")
+check_equal(providers.price_color(true, true, true, false), "#9c2318", "light mode still honours red-rises")
+check_equal(providers.price_color(false, true, true, false), "#0a5c39", "light mode still honours red-rises")
+check_equal(providers.price_color(true, false, false, false), "#6a6a6a", "light mode darkens the neutral colour")
+check(providers.price_color(true, false, true, false) ~= providers.price_color(true, false, true, true),
+  "the two modes really do differ")
 
 if failures > 0 then
   print("providers: " .. failures .. " check(s) failed")

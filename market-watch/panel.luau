@@ -33,11 +33,11 @@ local PANEL_SETTINGS = PLUGIN_ID .. ":settings"
 -- shrank to its text, bunching the headings together over the wrong columns.
 local COL_LOGO = 32
 local COLS = {
-  { key = "coin", min = 96, flex = 1, align = "start" },
-  { key = "price", min = 112, align = "end" },
-  { key = "change", min = 92, align = "end" },
-  { key = "high", min = 100, align = "end" },
-  { key = "low", min = 100, align = "end" },
+  { key = "coin", min = 84, flex = 1, align = "start" },
+  { key = "price", min = 104, align = "end" },
+  { key = "change", min = 88, align = "end" },
+  { key = "high", min = 92, align = "end" },
+  { key = "low", min = 92, align = "end" },
 }
 local ROW_GAP = 6
 
@@ -49,6 +49,9 @@ local logos = {}
 local health = nil
 local busy = true
 local show_close_button = true
+-- The rise/fall palette is mode-dependent; refreshed on every render so a theme switch is
+-- picked up. See providers.price_color.
+local dark_mode = true
 
 local command_seq = 0
 
@@ -122,7 +125,12 @@ local function data_row(row)
   local has_data = quote ~= nil
 
   local price_color = stale and "on_surface_variant"
-    or providers.price_color(quote ~= nil and quote.is_rising, config ~= nil and config.red_rises, has_data)
+    or providers.price_color(
+      quote ~= nil and quote.is_rising,
+      config ~= nil and config.red_rises,
+      has_data,
+      dark_mode
+    )
 
   return ui.row({ key = row.id, align = "center", gap = ROW_GAP }, {
     logo_cell(row),
@@ -179,6 +187,7 @@ local function status_box()
 end
 
 local function render()
+  dark_mode = noctalia.isDarkMode()
   local columns = { header_row() }
 
   for _, row in ipairs(watch) do
@@ -309,5 +318,12 @@ function onOpen(_context)
   -- Read on every open: it does not reload when the shell setting changes.
   -- Only an explicit false hides the button (the host's own convention).
   show_close_button = noctalia.getSetting("shell.show_close_buttons") ~= false
+  render()
+end
+
+-- Switching between a light and a dark palette changes which rise/fall shades apply, and
+-- re-theming arrives here as a config change. The panel does not poll, so without this an
+-- open panel would keep the previous mode's colours until something else re-rendered it.
+function onConfigChanged()
   render()
 end

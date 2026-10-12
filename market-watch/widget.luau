@@ -100,7 +100,8 @@ local function render()
   -- instead of claiming a live rise/fall colour.
   local quote_status = statuses[id]
   local stale = quote_status ~= nil and quote_status.status == "stale"
-  local color = stale and "on_surface_variant" or providers.price_color(quote.is_rising, red_rises, true)
+  local color = stale and "on_surface_variant"
+    or providers.price_color(quote.is_rising, red_rises, true, noctalia.isDarkMode())
   local text = display_mode == "text" and (symbol .. " " .. price_text) or price_text
 
   barWidget.render(container()({ gap = 4, align = "center" }, {

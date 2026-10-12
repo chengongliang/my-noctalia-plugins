@@ -656,15 +656,29 @@ end
 
 -- Rise/fall colours. ui colours accept plain hex, so the v4 palette survives even
 -- though barWidget.setColor only takes a palette role.
-function Providers.price_color(is_rising, red_rises, has_data)
+--
+-- v4 picked its two shades against a dark panel, and both are light pastels: on a light
+-- surface #39c38c lands at barely 1.1:1, so the figures look washed out and the columns
+-- become hard to read. The same two hues are kept, with a darker shade selected when the
+-- palette Noctalia renders with is light. Callers pass noctalia.isDarkMode(); omitting it
+-- keeps the v4 dark values, so existing callers and the unit tests are unaffected.
+local RISE_DARK, RISE_LIGHT = "#39c38c", "#0a5c39"
+local FALL_DARK, FALL_LIGHT = "#ff704b", "#9c2318"
+local FLAT_DARK, FLAT_LIGHT = "#888888", "#6a6a6a"
+
+function Providers.price_color(is_rising, red_rises, has_data, dark)
+  local rise, fall, flat = RISE_LIGHT, FALL_LIGHT, FLAT_LIGHT
+  if dark ~= false then
+    rise, fall, flat = RISE_DARK, FALL_DARK, FLAT_DARK
+  end
   if has_data ~= true then
-    return "#888888"
+    return flat
   end
   if red_rises == true then
     -- Chinese convention: red rises, green falls.
-    return is_rising == true and "#ff704b" or "#39c38c"
+    return is_rising == true and fall or rise
   end
-  return is_rising == true and "#39c38c" or "#ff704b"
+  return is_rising == true and rise or fall
 end
 
 return Providers
