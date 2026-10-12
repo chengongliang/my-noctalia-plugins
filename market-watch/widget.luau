@@ -27,6 +27,7 @@ local ERROR_TEXT = "#888888"
 
 local config = nil
 local bar = nil
+local watch = {}
 local quotes = {}
 local statuses = {}
 local health = nil
@@ -129,6 +130,12 @@ noctalia.state.watch("market.bar", function(value)
   render()
 end)
 
+noctalia.state.watch("market.watch", function(value)
+  -- Kept only so the wheel can walk the list in the order the panel shows. No render:
+  -- the service republishes market.bar whenever a change moves the bar asset.
+  watch = value or {}
+end)
+
 noctalia.state.watch("market.quotes", function(value)
   quotes = value or {}
   render()
@@ -153,6 +160,48 @@ end)
 
 function onClick()
   noctalia.togglePanel(PANEL_WATCH)
+end
+
+-- Scrolling the bar over the pill walks the displayed asset along the watch list, in the
+-- order the settings panel lists it, wrapping at both ends. v4's BarWidget.qml had no
+-- wheel handler and its manifest declared no scroll binding, so the pill could only ever
+-- show the single asset picked in the settings panel; the manifest now binds
+-- scroll_up/scroll_down to "none" so the host hands the wheel here instead of consuming it.
+function onScroll(_axis, steps, _startsGesture)
+  local count = #watch
+  if count < 2 then
+    return
+  end
+  -- Callback arguments arrive as strings.
+  local direction = tonumber(steps)
+  if direction == nil or direction == 0 then
+    return
+  end
+
+  local id = (bar and bar.id) or (config and config.bar_coin)
+  local index = nil
+  for position, entry in ipairs(watch) do
+    if entry.id == id then
+      index = position
+      break
+    end
+  end
+
+  -- One asset per notch: a coalesced flick should not sail through half the list.
+  local target = (((index or 1) - 1 + (direction > 0 and 1 or -1)) % count) + 1
+  local entry = watch[target]
+  if entry == nil or entry.id == nil then
+    return
+  end
+
+  -- The service owns the list and persists the choice, so the wheel goes through the same
+  -- command channel as the settings panel. The nonce matters: wrapping back round to the
+  -- asset already on show would otherwise publish an equal command and be coalesced away.
+  noctalia.state.set("market.cmd", {
+    op = "set_bar_coin",
+    id = entry.id,
+    nonce = tostring(noctalia.nowMs()) .. "-" .. tostring(target),
+  })
 end
 
 -- Right-click is user configuration now: the manifest binds

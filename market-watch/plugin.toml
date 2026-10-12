@@ -15,7 +15,7 @@
 
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.5"
+version = "2.0.6"
 plugin_api = 26
 author = "chengongliang"
 license = "MIT"
@@ -107,6 +107,10 @@ entry = "widget.luau"
   [widget.actions]
   left = "none"
   right = "settings-open-widget"
+  # "none" keeps the host from consuming the wheel, so widget.luau's onScroll() cycles the
+  # displayed asset through the watch list.
+  scroll_up = "none"
+  scroll_down = "none"
 
 [[service]]
 id = "service"
@@ -114,16 +118,16 @@ entry = "service.luau"
 
 # Market table. Geometry is host-owned and stays user-adjustable.
 #
-# 600x560: the height fits about thirteen rows plus the headings and the footer, so the
-# twelve-coin list this was tuned against needs no scrolling, and a longer list scrolls
+# 600x495: the height fits exactly the twelve rows this was tuned against, plus the
+# headings and the footer, so a twelve-coin list needs no scrolling; a longer list scrolls
 # inside the table under a pinned heading row. It was 680x480, which was wide enough to
 # strand the columns and tall enough to leave a third of the panel empty above the footer
-# at the default five coins.
+# at the default five coins. Measured at ~30.7 px per row.
 [[panel]]
 id = "watch"
 entry = "panel.luau"
 width = 600
-height = 560
+height = 495
 placement = "attached"
 position = "center"
 open_near_click = false

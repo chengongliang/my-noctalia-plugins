@@ -64,10 +64,14 @@ State and files below). There is no other companion program.
    asset, or a rapid move rule that watches the assets you tick.
 5. Left click the bar widget to open the market table; the landing rows show price,
    24h change, 24h high and 24h low for each watched asset.
+6. Scroll the wheel over the bar widget to walk the displayed asset along the watch
+   list, in the order the settings panel lists it. It wraps at both ends, so one
+   gesture reaches every asset; with a single watched asset there is nothing to cycle.
 
-Bar gestures are user configuration in Noctalia v5. This plugin ships two defaults:
-`left = "none"` so the widget's own click handler opens the market panel, and
-`right = "settings-open-widget"`. The v4 right-click menu — open panel, switch display
+Bar gestures are user configuration in Noctalia v5. This plugin ships four defaults:
+`left = "none"` so the widget's own click handler opens the market panel,
+`right = "settings-open-widget"`, and `scroll_up`/`scroll_down = "none"` so the wheel
+reaches the widget instead of being consumed by the host. The v4 right-click menu — open panel, switch display
 mode, settings, refresh now — cannot be a context menu in v5, because panels own the
 only context-menu API. The equivalent actions are the panel's refresh and gear buttons
 and the IPC events listed under Plugin.
