@@ -1,0 +1,196 @@
+# Hermes Agent - Noctalia v5 plugin.
+#
+# Port of the legacy v4 QML plugin (hermes-agent 1.2.0). The bundled Python bridge
+# (scripts/hermes_bridge.py) is byte-identical to the v4 one: it still owns the Hermes
+# JSON-RPC session, normalises the state snapshot, writes the state file, and serves the
+# HTTP API. Only the client side was rewritten for v5:
+#
+#   [[service]] bridge   drives the bridge process, performs every HTTP call, and
+#                        republishes the snapshot on noctalia.state for the UI entries
+#                        (v5 entries are isolated VMs - pluginApi.mainInstance is gone).
+#   [[widget]]  status   bar pill: icon + status dot + status word.
+#   [[panel]]   chat     transcript, approvals, tool activity, model picker, composer.
+#   [[launcher_provider]] hermes   /hermes ask, open, new session, resume.
+#
+# plugin_api = 24 is the argv form of noctalia.runAsync, which spawns the bridge without a
+# shell-quoting hazard. ui.markdown / ui.input.submitOnEnter / ui.scroll.stickToBottom (21)
+# and [widget.actions] (14) are the other features this port relies on.
+
+id = "chengongliang/hermes-agent"
+name = "Hermes Agent"
+version = "2.0.0"
+plugin_api = 24
+author = "chengongliang"
+license = "MIT"
+# External commands this plugin runs. `ssh` is only ever run by the user by hand (see the
+# README); it is declared because client-only mode is unusable without it.
+dependencies = ["python3", "ssh"]
+tags = ["panel", "launcher", "utility", "ai"]
+icon = "sparkles"
+description = "Native Noctalia status and chat panel for Hermes Agent, driven by a local or remote-over-SSH bridge."
+
+# ── Settings ─────────────────────────────────────────────────────────────────────────────
+# Declared at plugin level because the bridge service owns almost all of them; a
+# plugin-level setting is readable from every entry, unlike a [[widget.setting]].
+#
+# The technical plumbing (paths, process auto-start, poll cadence) is marked `advanced` so
+# the everyday controls stay at the top of the page. The v4 settings page hid the same set
+# behind its "Advanced settings" reveal, minus the model picker, which now lives in the
+# chat panel because v5 has no custom settings UI.
+
+[[setting]]
+key = "bridgeHost"
+type = "string"
+label_key = "settings.bridge_host.label"
+description_key = "settings.bridge_host.description"
+default = "127.0.0.1"
+
+[[setting]]
+key = "bridgePort"
+type = "int"
+label_key = "settings.bridge_port.label"
+description_key = "settings.bridge_port.description"
+default = 19777
+min = 1024
+max = 65535
+
+[[setting]]
+key = "clientOnlyMode"
+type = "bool"
+label_key = "settings.client_only_mode.label"
+description_key = "settings.client_only_mode.description"
+default = false
+
+[[setting]]
+key = "bridgeTokenManual"
+type = "string"
+label_key = "settings.bridge_token.label"
+description_key = "settings.bridge_token.description"
+default = ""
+# Booleans are compared as strings here, so the literal is "true".
+visible_when = { key = "clientOnlyMode", values = ["true"] }
+
+[[setting]]
+key = "hideWhenIdle"
+type = "bool"
+label_key = "settings.hide_when_idle.label"
+description_key = "settings.hide_when_idle.description"
+default = false
+
+[[setting]]
+key = "showToolActivity"
+type = "bool"
+label_key = "settings.show_tool_activity.label"
+description_key = "settings.show_tool_activity.description"
+default = false
+
+[[setting]]
+key = "statusPollIntervalSec"
+type = "int"
+label_key = "settings.status_poll_interval.label"
+description_key = "settings.status_poll_interval.description"
+default = 30
+min = 5
+max = 300
+advanced = true
+
+[[setting]]
+key = "stateFile"
+type = "string"
+label_key = "settings.state_file.label"
+description_key = "settings.state_file.description"
+default = "~/.cache/noctalia-hermes/state.json"
+advanced = true
+
+# `folder` rather than `string`: the shell offers a directory picker. The default doubles as
+# the "not configured" sentinel - when it is left alone the bridge auto-detects the real
+# Hermes home itself.
+[[setting]]
+key = "hermesHome"
+type = "folder"
+label_key = "settings.hermes_home.label"
+description_key = "settings.hermes_home.description"
+default = "~/.hermes"
+advanced = true
+
+[[setting]]
+key = "hermesCommand"
+type = "string"
+label_key = "settings.hermes_command.label"
+description_key = "settings.hermes_command.description"
+default = "hermes"
+advanced = true
+
+[[setting]]
+key = "autoStartBridge"
+type = "bool"
+label_key = "settings.auto_start_bridge.label"
+description_key = "settings.auto_start_bridge.description"
+default = true
+advanced = true
+
+[[setting]]
+key = "autoStartGateway"
+type = "bool"
+label_key = "settings.auto_start_gateway.label"
+description_key = "settings.auto_start_gateway.description"
+default = true
+advanced = true
+
+[[setting]]
+key = "defaultProvider"
+type = "string"
+label_key = "settings.default_provider.label"
+description_key = "settings.default_provider.description"
+default = ""
+advanced = true
+
+[[setting]]
+key = "defaultModel"
+type = "string"
+label_key = "settings.default_model.label"
+description_key = "settings.default_model.description"
+default = ""
+advanced = true
+
+# ── Entries ──────────────────────────────────────────────────────────────────────────────
+
+# Owns the bridge process and the shared state. Never renders anything.
+[[service]]
+id = "bridge"
+entry = "service.luau"
+
+# Bar pill. Bar gestures are user configuration in v5, so the v4 right-click menu is gone:
+# left click opens the panel, right click opens this widget's settings. The menu's old
+# entries (open, new session, interrupt, refresh, start gateway) all live in the panel now.
+[[widget]]
+id = "status"
+entry = "widget.luau"
+
+  [widget.actions]
+  # "none" leaves the gesture to onClick(), which toggles the panel.
+  left = "none"
+  # The shell's built-in "open this widget's settings" verb, kept so right-click still
+  # reaches the settings page the old context menu used to link to.
+  right = "settings-open-widget"
+
+# Chat surface. `floating` + `center_right` + height `fill` is the closest v5 equivalent of
+# the v4 docked/pinned side panel (v5 has no layer-shell or always-on-top window API).
+# Deliberately NOT persistent: a persistent panel rejects `ui.select`, and the provider and
+# model pickers need dropdowns.
+[[panel]]
+id = "chat"
+entry = "panel.luau"
+width = 520
+height = "fill"
+placement = "floating"
+position = "center_right"
+keyboard_focus = "on_demand"
+
+[[launcher_provider]]
+id = "hermes"
+entry = "launcher.luau"
+prefix = "hermes"
+glyph = "sparkles"
+include_in_global_search = false
+debounce_ms = 200

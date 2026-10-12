@@ -68,37 +68,40 @@ translations, and documentation together.
 
 ### 2. Signatures
 
-`Main.qml` owns `configPath`, `catalogCacheDir`, `catalogCachePath`, and `logoDir`.
-Use `Logger.<level>("MarketWatch", message)` for this plugin.
+In Noctalia v5, `market-watch/lib/store.luau` owns `Store.config_path()`,
+`Store.runtime_path()`, `Store.instruments_path()`, and `Store.subdir(name)`.
+Logging uses `noctalia.log`; the host identifies the plugin.
 
 ### 3. Contracts
 
-- `configPath`: `$HOME/Downloads/market-watch-config.json`.
-- `catalogCachePath`: `$HOME/.cache/noctalia/market-watch/catalogs/<provider>-<marketType>.json`; CoinGecko uses `spot`.
-- `logoDir`: `$HOME/.cache/noctalia/market-watch/logos`.
-- Locale files, embedded translations, and both READMEs must describe the same paths.
+- `Store.config_path()`: `noctalia.expandPath("~/Downloads/market-watch-config.json")`.
+- `Store.runtime_path()`: `noctalia.pluginDataDir()` plus `/market.json`.
+- `Store.instruments_path()`: `noctalia.pluginDataDir()` plus `/instruments.json`.
+- Logo files use `Store.subdir("logos")`, under the host-owned plugin data directory.
+- Both translation files and both READMEs must describe the same export path.
 
 ### 4. Validation & Error Matrix
 
-A missing or empty import file uses `settings.configImportMissing`. Unusable
-catalog caches follow the existing discovery/failure flow. A directory rename
-rebuilds caches; it must not change saved plugin settings.
+A missing or empty import file uses `settings.config_import_missing`. Oversized
+or malformed files use `settings.config_import_failed`. Renaming the export file
+must not relocate runtime state, instrument metadata, or logo files.
 
 ### 5. Good / Base / Bad Cases
 
 Good: an earlier export renamed to `market-watch-config.json` imports normally.
-Base: a fresh install creates caches in the current plugin directory.
-Bad: documentation names a different export file from `configPath`.
+Base: a fresh install persists state in the host-owned plugin data directory.
+Bad: documentation names a different export file from `Store.config_path()`.
 
 ### 6. Tests Required
 
-For naming-only edits, validate JSON and locale/embedded path consistency, scan
-repository content and filenames for previous identifiers, and run existing
-provider/alert tests plus `git diff --check`. No new unit test is needed for a
-literal rename. Report whether shell import/export was manually exercised.
+For naming-only edits, validate translation/path consistency, scan repository
+content and filenames for previous identifiers, run existing Luau provider/alert
+tests, `noctalia plugins lint .`, the CI validator, and `git diff --check`.
+Regenerate `catalog.toml` when `plugin.toml` changes version. No new unit test is
+needed for a literal rename. Report whether import/export was manually exercised.
 
 ### 7. Wrong vs Correct
 
 Wrong: independently rename the UI path while leaving the I/O path unchanged.
-Correct: keep `configPath`, both translation sources, and both README examples
+Correct: keep `Store.config_path()`, both translation sources, and both README examples
 aligned with `~/Downloads/market-watch-config.json` in the same change.
