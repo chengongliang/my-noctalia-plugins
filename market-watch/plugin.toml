@@ -1,0 +1,137 @@
+# Market Watch - real-time quotes for crypto, metals and US stocks.
+#
+# v5 port of the v4 QML plugin. The manifest declares identity, the static
+# settings and the entries; everything the user can change at runtime (watch list,
+# bar asset, display mode, alert rules) lives in pluginDataDir()/market.json
+# because a plugin cannot write settings.
+#
+# plugin_api 26: argv-form runAsync (24) keeps the curl `-x` proxy path alive, and
+# getSetting (26) gates the panel close button on shell.show_close_buttons. Nothing
+# newer is used.
+#
+# 2.0.1 - the bulk instrument catalogue was removed: a service callback may not
+# decode ~1.4 MB of JSON (Huobi spot) and subprocess stdout is truncated at 1 MiB,
+# so instruments are built on demand from the symbol instead. See service.luau.
+
+id = "chengongliang/market-watch"
+name = "Market Watch"
+version = "2.0.1"
+plugin_api = 26
+author = "chengongliang"
+license = "MIT"
+icon = "chart-line"
+description = "Track crypto, metals and US stock quotes in the bar and a detail panel."
+dependencies = ["curl"]
+tags = ["bar", "panel", "indicator", "utility"]
+
+# ── Static settings (host-rendered, read-only for the plugin) ────────────────
+
+[[setting]]
+key = "data_source"
+type = "select"
+label_key = "settings.data_source"
+description_key = "settings.data_source_desc"
+default = "huobi"
+
+  [[setting.options]]
+  value = "huobi"
+  label_key = "data_source.huobi"
+
+  [[setting.options]]
+  value = "binance"
+  label_key = "data_source.binance"
+
+  [[setting.options]]
+  value = "okx"
+  label_key = "data_source.okx"
+
+  [[setting.options]]
+  value = "coingecko"
+  label_key = "data_source.coingecko"
+
+[[setting]]
+key = "market_type"
+type = "select"
+label_key = "settings.market_type"
+description_key = "settings.market_type_desc"
+default = "spot"
+
+  [[setting.options]]
+  value = "spot"
+  label_key = "market_type.spot"
+
+  [[setting.options]]
+  value = "perpetual"
+  label_key = "market_type.perpetual"
+
+[[setting]]
+key = "proxy_url"
+type = "string"
+label_key = "settings.proxy"
+description_key = "settings.proxy_tip"
+default = ""
+
+[[setting]]
+key = "refresh_interval"
+type = "int"
+label_key = "settings.refresh_interval"
+description_key = "settings.refresh_interval_desc"
+default = 5
+min = 1
+max = 60
+step = 1
+
+[[setting]]
+key = "red_rises"
+type = "bool"
+label_key = "settings.red_rises"
+description_key = "settings.color_scheme_desc"
+default = false
+
+# Seeds the watch list on the very first run only. After that the list the user
+# edits in the settings panel (market.json) wins, so changing this value later
+# cannot clobber a live watch list.
+[[setting]]
+key = "watch_list"
+type = "string_list"
+label_key = "settings.watch_list"
+description_key = "settings.watch_list_tip"
+default = ["btc", "eth", "bnb", "sol", "xrp"]
+
+# ── Entries ─────────────────────────────────────────────────────────────────
+
+[[widget]]
+id = "bar"
+entry = "widget.luau"
+
+  # The v4 right-click menu cannot be reproduced: the bar has no context-menu API.
+  # `left = "none"` lets the widget's own onClick run (it toggles the panel) and
+  # `right` keeps the legacy Settings entry as the host's per-widget settings.
+  # The other legacy menu items are exposed as IPC events on the service.
+  [widget.actions]
+  left = "none"
+  right = "settings-open-widget"
+
+[[service]]
+id = "service"
+entry = "service.luau"
+
+# Market table. Geometry is host-owned and stays user-adjustable.
+[[panel]]
+id = "watch"
+entry = "panel.luau"
+width = 680
+height = 480
+placement = "attached"
+position = "center"
+open_near_click = false
+
+# Settings panel. "fill" spans the output's available extent and therefore needs
+# floating placement.
+[[panel]]
+id = "settings"
+entry = "settings_panel.luau"
+width = 560
+height = "fill"
+placement = "floating"
+position = "center"

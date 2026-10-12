@@ -1,196 +1,224 @@
-# Market Watch Plugin
+# Market Watch
 
-A real-time market monitoring plugin for Noctalia Shell, displaying live crypto spot prices and supported USDT perpetual contract prices from multiple exchanges.
+Market Watch is a Noctalia plugin that shows live market prices for cryptocurrencies,
+metals and US stocks in the status bar and in a scrollable detail panel. Instead of
+shipping a fixed coin table it discovers the exact tradable instruments from the
+exchange you select, so newly listed markets work without a plugin update. Per-asset
+price alerts and a rapid rise/fall detector can notify you when something moves.
 
-![Version](https://img.shields.io/badge/version-1.2.0-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
+## Plugin
 
-## Features
+| Field | Value |
+| --- | --- |
+| Manifest id | `chengongliang/market-watch` |
+| Version | 2.0.0 |
+| Plugin API | 26 |
+| Dependency | `curl` |
 
-- **Multi-Exchange Support**: Huobi, Binance, OKX, and CoinGecko
-- **Spot and Perpetual Markets**: Spot crypto pairs plus supported USDT perpetual contracts, including exchange-listed metals and stock contracts
-- **Status Bar Widget**: Display single asset price with trend indicator
-- **Market Panel**: Detailed view of multiple assets with 24h high/low
-- **Display Modes**: Text mode (with asset symbol) or compact mode (price only)
-- **Color Schemes**: Red-rises-green-falls or green-rises-red-falls
-- **Provider-driven Instruments**: Discovers exact tradable instruments from Huobi, Binance, OKX, and CoinGecko instead of guessing symbols
-- **Reliable Quote Refresh**: Limits concurrent requests, preserves stale values, and rejects responses from an obsolete provider configuration
-- **Auto Logo Management**: Uses instrument metadata first, then exact external matching, an identity-keyed cache, and a text fallback
-- **Price Alerts**: Set independent upper and lower prices for every monitored instrument; notifications fire on fresh threshold crossings and automatically re-arm after the price returns inside the range
-- **Rapid-Move Alerts**: Configure a percentage, rolling time window, cooldown, and explicit instrument selection for fast rises and falls
-- **Language Switcher**: Switch the plugin interface between English and Simplified Chinese
-- **Proxy Support**: Optional HTTP/SOCKS5 proxy configuration
-- **Config Import/Export**: Export and restore your settings with a JSON file
+Entries:
 
-## Installation
+- `service` — the headless engine. It owns instrument resolution, the quote queue,
+  the alert rules, the logo cache and the runtime state, and publishes all of it on
+  the plugin's shared state channel.
+- `bar` — the status bar widget: one asset, a rise/fall colour and an arrow.
+- `watch` — the market table: price, 24h change, high and low for every watched asset.
+- `settings` — the settings panel: watch list, bar asset, display mode, price alerts,
+  rapid alert and configuration import/export.
 
-1. Copy the plugin to Noctalia plugins directory:
-```bash
-cp -r market-watch ~/.config/noctalia/plugins/
+Open the panels from the command line:
+
+```sh
+noctalia msg panel-toggle chengongliang/market-watch:watch
+noctalia msg panel-toggle chengongliang/market-watch:settings
 ```
 
-2. Restart Noctalia Shell or reload the configuration.
+The bar widget opens the market panel on a left click. Its right click is bound to the
+host's per-widget settings dialog (see the gesture note under Usage). The service also
+answers plugin IPC, for example:
+
+```sh
+noctalia msg plugin chengongliang/market-watch:service focused refresh-now
+noctalia msg plugin chengongliang/market-watch:service focused force-refresh
+noctalia msg plugin chengongliang/market-watch:service focused toggle-mode
+noctalia msg plugin chengongliang/market-watch:service focused toggle-panel
+noctalia msg plugin chengongliang/market-watch:service focused status
+```
+
+## Requirements
+
+- `curl` — every network call goes through it: symbol resolution, each quote, the
+  logo lookup and the logo download. It is declared as a manifest dependency.
+
+The plugin also needs a shell build with plugin API 26, and it writes files (see
+State and files below). There is no other companion program.
 
 ## Usage
 
-### Status Bar Widget
-- **Left Click**: Open or close the detailed market panel
-- **Right Click**: Open the context menu for settings, refresh, and display mode switching
+1. Add the **Market Watch** bar widget to your bar from the widget picker.
+2. Open the settings panel (`noctalia msg panel-toggle chengongliang/market-watch:settings`)
+   or click the gear button in the market panel, then search for an asset such as
+   `btc`, `xau` or `aapl` and click a result to add it to the watch list.
+3. Use the arrow buttons to reorder rows and the trash button to remove one. The
+   first entry becomes the bar asset when the current one is removed.
+4. Pick the bar asset, the display mode, and optionally an upper and lower price per
+   asset, or a rapid move rule that watches the assets you tick.
+5. Left click the bar widget to open the market table; the landing rows show price,
+   24h change, 24h high and 24h low for each watched asset.
 
-### Market Panel
-- View multiple coins with real-time prices, 24h change, high/low
-- Click **Refresh** button to manually update data
-- Click **Settings** to configure the plugin
+Bar gestures are user configuration in Noctalia v5. This plugin ships two defaults:
+`left = "none"` so the widget's own click handler opens the market panel, and
+`right = "settings-open-widget"`. The v4 right-click menu — open panel, switch display
+mode, settings, refresh now — cannot be a context menu in v5, because panels own the
+only context-menu API. The equivalent actions are the panel's refresh and gear buttons
+and the IPC events listed under Plugin.
 
-### Settings
-- **Data Source**: Choose between Huobi, Binance, OKX, or CoinGecko
-- **Proxy URL**: Optional HTTP/SOCKS5 proxy (format: `http://host:port` or `socks5://host:port`)
-- **Market Type**: Choose spot or perpetual futures for Huobi, Binance, and OKX
-- **Status Bar Asset**: Select which asset to display in the status bar
-- **Display Mode**: Full mode (with symbol) or compact mode (price only)
-- **Panel Position**: Open the market panel centered or near the clicked bar widget
-- **Watch List**: Add/remove assets by clicking, reorder with arrow buttons
-- **Per-asset price alerts**: Enable an alert row and enter optional upper and lower prices for each watch-list instrument
-- **Rapid rise/fall alerts**: Enable the global rule, set its percentage/window/cooldown, and check the instruments it should monitor
-- **Color Scheme**: Red rises (Chinese style) or green rises (Western style)
-- **Refresh Interval**: Set update frequency from 1 to 60 seconds
-- **Language**: Switch the plugin interface between English and Simplified Chinese
-- **Config Management**: Export/import settings to/from `~/Downloads/crypto-market-config.json`
+## Settings
 
-## Configuration
+The first group of settings is rendered by the shell from the manifest. The plugin
+reads them but cannot write them, so they are the *static* half of the configuration:
 
-Default settings in `manifest.json`:
-```json
-{
-  "watchList": ["btc", "eth", "bnb", "sol", "xrp"],
-  "barCoin": "btc",
-  "displayMode": "text",
-  "panelPosition": "center",
-  "redRises": false,
-  "refreshInterval": 5,
-  "dataSource": "huobi",
-  "marketType": "spot",
-  "proxyUrl": "",
-  "language": "en",
-  "watchListSchemaVersion": 2,
-  "priceAlerts": {},
-  "rapidAlert": {
-    "enabled": false,
-    "thresholdPercent": 5,
-    "windowMinutes": 5,
-    "cooldownMinutes": 30,
-    "instrumentIds": []
-  }
-}
-```
+| Setting | Type | Default | Effect |
+| --- | --- | --- | --- |
+| Data source | select | `huobi` | Which exchange or aggregator provides symbol resolution and quotes: Huobi, Binance, OKX or CoinGecko. |
+| Market type | select | `spot` | Spot pairs or USDT perpetual contracts. CoinGecko is always spot. |
+| Proxy URL | string | empty | Optional `http://host:port` or `socks5://host:port`, passed to every `curl` call. |
+| Refresh interval | int, 1-60 | 5 | Seconds between refresh cycles. CoinGecko is floored at 10 seconds. |
+| Red rises | bool | false | Rise in red and fall in green, instead of the Western green/red. |
+| Watch list | string list | btc, eth, bnb, sol, xrp | Seeds the watch list on the first run only. |
 
-## Supported Assets
+Everything else is edited in the **settings panel** and stored by the service in
+`pluginDataDir()/market.json`, because a v5 plugin cannot write settings:
 
-Instruments are discovered from the selected provider catalog. Search results use the provider's exact tradable identifier, so newly listed instruments do not require plugin code changes. Unavailable or ambiguous legacy entries remain visible until you replace or remove them.
+- the watch list (order included) and the bar asset,
+- the status bar display mode (full text or compact price only),
+- the per-asset upper and lower price alerts,
+- the rapid rise/fall rule: enable, threshold percent, observation window, cooldown
+  and the monitored assets.
 
-## Data Sources
+Configuration import and export use `~/Downloads/crypto-market-config.json`, the same
+path as the v4 plugin. Export writes that file; import reads it and applies the
+runtime half of the configuration. The static settings in the file are informational:
+the import reports them so you know to change them in the host settings window.
 
-### Huobi (Default)
-- API: `https://api.huobi.pro/market/history/kline`
-- Perpetual API: `https://api.hbdm.com/linear-swap-ex/market/history/kline`
-- No rate limits for basic usage
-- Recommended refresh interval: 5 seconds
+## Data sources
 
-### Binance
-- API: `https://api.binance.com/api/v3/klines`
-- Perpetual API: `https://fapi.binance.com/fapi/v1/klines`
-- Rate limit: 1200 requests per minute
-- Recommended refresh interval: 3 seconds
+Metals and US stocks appear as exchange-listed USDT perpetual contracts, for example
+`AAPL-USDT` on HTX or a tokenized-stock swap on OKX; spot markets are crypto pairs
+only.
 
-### OKX
-- API: `https://www.okx.com/api/v5/market/candles`
-- Perpetual symbols use `-USDT-SWAP` instruments
-- Rate limit: 20 requests per 2 seconds
-- Recommended refresh interval: 5 seconds
+There is no bulk instrument download. Symbols are built on demand from the bare asset
+name, in exactly the shapes the v4 quote URLs already used:
 
-### CoinGecko
-- API: `https://api.coingecko.com/api/v3/simple/price`
-- Spot crypto assets only in this plugin
-- Rate limit: 50 calls per minute (free tier)
-- **Minimum refresh interval: 10 seconds** (enforced by plugin)
+| Provider | Spot symbol | Perpetual symbol | Quote | Availability check |
+| --- | --- | --- | --- | --- |
+| Huobi | `btcusdt` | `BTC-USDT` | 1-day kline | the first quote |
+| Binance | `BTCUSDT` | `BTCUSDT` | 1-day kline | per-symbol `exchangeInfo?symbol=` |
+| OKX | `BTC-USDT` | `BTC-USDT-SWAP` | 1-day candle | per-symbol `instruments?instId=` |
+| CoinGecko | coin id, from `/search?query=` | not available | `simple/price` with 24h change | `/search?query=` |
 
-## Troubleshooting
+This is a deliberate change from v4, which resolved the watch list against the
+provider's complete catalogue because one service callback may not decode a body of
+that size (Huobi's spot catalogue alone is about 1.4 MB, and subprocess stdout is
+truncated at 1 MiB). The practical consequences:
 
-### No data displayed
-1. Check internet connection
-2. Test API access: `curl -s 'https://api.huobi.pro/market/history/kline?period=1day&size=1&symbol=btcusdt'`
-3. Try enabling proxy in settings if behind a firewall
-4. Switch to a different data source
+- A symbol that the exchange does not trade is reported as unavailable, either by the
+  per-symbol check (Binance, OKX) or by the first quote (Huobi, CoinGecko).
+- The add-symbol search no longer walks the entire instrument universe. It answers
+  from the small search endpoints — CoinGecko `/search?query=` and TradingView's
+  symbol search, which is also how tokenized-stock perpetuals are found. The query is
+  debounced and cached, so typing does not turn into a request per keystroke.
+- Resolved instrument metadata (id, symbols, name, availability) is cached in
+  `pluginDataDir()/instruments.json`, so a restart does not have to re-resolve or
+  re-verify anything.
 
-### Logos not showing
-- Logos are resolved from provider metadata or an exact external match and cached on first use
-- If no trustworthy image is available, the asset symbol is shown as a text fallback
-- Check cache directory: `ls ~/.cache/noctalia/crypto-market/logos/`
-- If behind a firewall, configure proxy URL in settings
+Quotes are requested four at a time, and a failing instrument backs off exponentially
+(capped at five minutes) while its last good value stays on screen marked as stale.
+Every response is size-checked before it is parsed, and a malformed or oversized body
+never replaces the last good quote.
 
-### Plugin not loading
-1. Verify JSON syntax: `jq . manifest.json`
-2. Check plugin is enabled: `cat ~/.config/noctalia/plugins.json | jq '.states["crypto-market"]'`
-3. Check Noctalia logs for errors
+## Alerts
 
-### Rate limit errors
-- Increase refresh interval in settings
-- CoinGecko free tier: use minimum 10 seconds interval
-- Binance: recommended 3+ seconds for multiple coins
+- **Price alerts** fire when the price crosses an upper or lower bound. The first
+  sample only arms the rule, so starting the shell while the price already sits beyond
+  a bound does not fire; the rule re-arms once the price comes back inside the band.
+- **Rapid alerts** compare the newest price with the oldest price inside the
+  observation window. Crossing the threshold fires once, then the pair stays disarmed
+  until the price returns inside the band and the cooldown has elapsed.
+- Notifications are plain host notifications: v4 could pick an icon per alert
+  (arrow up, arrow down, bell) and v5's notify API takes a title and a body only, so
+  the direction is carried by the message text instead.
+- Alert state lives in memory. Reloading the plugin re-arms the rules rather than
+  notifying about crossings that happened while it was not running.
+
+## State and files
+
+| Path | Written by | Contents |
+| --- | --- | --- |
+| `pluginDataDir()/market.json` | the service | Watch list, bar asset, display mode, both alert rules, schema version. |
+| `pluginDataDir()/instruments.json` | the service | Resolved instrument metadata for the assets in use. |
+| `pluginDataDir()/logos/<instrument>.<png\|svg>` | the service | Cached asset logos. |
+| `pluginDataDir()/tradingview-logoids.json` | the service | Resolved TradingView logo ids, so the symbol search runs at most once per asset. |
+| `~/Downloads/crypto-market-config.json` | the settings panel | Export target and import source for the configuration. |
+
+Logos are resolved in the same order as v4: the provider metadata, then an exact
+CoinGecko match, then an unfiltered TradingView symbol search that also covers
+tokenized-stock perpetuals. A failed lookup is retried at most once a minute. v4
+cropped logos into a circle; `ui.image` only rounds corners, so the icon uses a radius
+that approximates the old mask, and an asset without a logo falls back to a two-letter
+badge. The TradingView logos are SVG: when `rsvg-convert` happens to be installed they
+are rasterised first, otherwise the SVG file is displayed directly and the badge
+remains the fallback if the shell cannot decode it.
+
+## Migrating from the v4 plugin
+
+The market data engine, the provider adapters and the alert rules were ported
+behaviour-for-behaviour, including the symbol grammar, the clamps, the first-sample
+arming rule and the rolling-window cooldown. Some user-facing pieces had to change
+because v5 removed or replaced them:
+
+| v4 | v5 |
+| --- | --- |
+| Custom `Settings.qml` page | A `[[panel]]` (`settings`) plus host-rendered manifest settings. |
+| `language` setting with bundled `i18n/*.json` | Translations follow the shell locale; `translations/en.json` and `translations/zh-Hans.json` ship with the plugin. |
+| `panelPosition` (center or click) | Host-provided panel placement, position and open-near-click, per panel. |
+| Bar right-click menu with four entries | Gesture bindings plus IPC events and panel buttons; the bar has no context-menu API. |
+| Alert icons (`arrow-up`, `arrow-down`, `bell-ringing`) | Text-only notifications. |
+| Circular logo mask (`OpacityMask`) | `ui.image` with a corner radius, or the two-letter badge. |
+| `priceAlerts`, `rapidAlert`, `watchList`, `barCoin`, `displayMode` as plugin settings | Runtime state in `pluginDataDir()/market.json`, edited in the settings panel. |
+| `barCoin` shared by every widget instance | Unchanged: one global bar asset, since there is no per-instance settings API. |
+| `watchListSchemaVersion` migration marker | Kept in `market.json`; bare symbols are rewritten to provider instrument ids as soon as the symbol is resolved. |
+| Resolution against the provider's complete catalogue | Not possible in v5 (one decode may not exceed ~100 KB, and captured stdout is capped at 1 MiB). Symbols are built on demand instead; see [Data sources](#data-sources). |
+| Search across the whole instrument universe | Answered from the CoinGecko and TradingView search endpoints, so a query only finds instruments those endpoints know about. |
+| A catalogue failure stuck the panel on "loading" | There is no catalogue step any more, so a plugin-wide error is limited to a missing `curl`; everything else is per-instrument. |
+
+The exported configuration is accepted in either spelling: the port's snake_case keys
+or the v4 camelCase names.
 
 ## Development
 
-### Project Structure
-```
-market-watch/
-├── Main.qml          # Core data manager, API polling, logo cache
-├── AlertEngine.js    # Price-boundary and rapid-move alert evaluation
-├── MarketProviders.js # Provider discovery and quote adapters
-├── BarWidget.qml     # Status bar widget component
-├── Panel.qml         # Market panel with coin table
-├── Settings.qml      # Configuration interface
-├── i18n/             # Plugin translations
-├── manifest.json     # Plugin metadata and defaults
-└── tests/             # Offline provider parser fixtures
+The provider and alert modules are host-free and run under a plain Lua interpreter, so
+the v4 fixture corpus still guards them:
+
+```sh
+lua5.4 tests/alerts_test.luau
+lua5.4 tests/providers_test.luau
 ```
 
-### Tech Stack
-- **QML/Qt Quick**: UI framework
-- **Quickshell API**: Noctalia integration
-- **Process**: Shell command execution for API calls and logo downloads
+Both suites drive the same assertions as the v4 tests against the unchanged files in
+`tests/fixtures/`: the four quote payloads, the two per-symbol verification payloads,
+symbol round trips against the Huobi perpetual catalogue, CoinGecko id resolution from
+the bulk list's own data, the TradingView search and logo fallback, price formatting,
+the crossing and cooldown logic and the normalisation clamps.
 
-### API Testing
-```bash
-# Test Huobi API
-curl -s 'https://api.huobi.pro/market/history/kline?period=1day&size=1&symbol=btcusdt'
+The service is written in a Lua 5.4-compatible subset as well, so it can be executed
+offline against a mock host with the same fixtures; that is how the quote queue, the
+debounce, the backoff and the size guards are exercised without a live shell.
 
-# Test Huobi perpetual API
-curl -s 'https://api.hbdm.com/linear-swap-ex/market/history/kline?period=1day&size=1&contract_code=BTC-USDT'
-
-# Test Binance API
-curl -s 'https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1d&limit=1'
-
-# Test Binance perpetual API
-curl -s 'https://fapi.binance.com/fapi/v1/klines?symbol=BTCUSDT&interval=1d&limit=1'
-
-# Test OKX API
-curl -s 'https://www.okx.com/api/v5/market/candles?instId=BTC-USDT&bar=1D&limit=1'
-
-# Test OKX perpetual API
-curl -s 'https://www.okx.com/api/v5/market/candles?instId=BTC-USDT-SWAP&bar=1D&limit=1'
-
-# Test CoinGecko API
-curl -s 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true'
+```sh
+noctalia plugins lint .
+python3 .github/workflows/validate-plugins.py
 ```
 
 ## License
 
-MIT License - see LICENSE file for details.
-
-## Author
-
-chengongliang
-
-## Version
-
-1.2.0 - Adds per-instrument upper/lower price alerts and selectable rolling rapid-move notifications; requires Noctalia Shell >= 4.6.6
+MIT. See the repository LICENSE file.
