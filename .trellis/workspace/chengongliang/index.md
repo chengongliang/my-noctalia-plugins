@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~106 | Active |
+| `journal-1.md` | ~140 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-10-12 | 同步 v5 迁移并推送命名清理 | `cd35302` | `main` |
 | 3 | 2026-10-12 | 清理 Market Watch 遗留命名 | `9269680` | `main` |
 | 2 | 2026-08-29 | 整合多币种滚动与告警通知 | `bd44e21` | `chengongliang/状态栏多币种滚动支持` |
 | 1 | 2026-07-19 | Bootstrap project guidelines | `10b142c` | `main` |
