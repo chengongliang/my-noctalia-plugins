@@ -1,0 +1,38 @@
+# This file is auto-generated. Do not edit manually.
+# This repository has no catalogue CI, and a git plugin source cannot list
+# plugins without a catalogue, so this generated file IS committed here.
+# Re-run .github/workflows/update-catalog.py after changing a plugin's
+# version or plugin_api.
+# Noctalia plugins catalog.
+# Index of every plugin this source ships: the minimum needed to render, search,
+# and compat-check the list. The per-plugin plugin.toml stays authoritative; the
+# host re-reads it on enable. Keep one [[plugin]] row per plugin subdirectory.
+# A [[plugin.release]] row names an older revision for a Noctalia below the tip's
+# plugin_api, so an older release stays installable instead of the plugin vanishing.
+# On every row, updated_at dates the commit that first shipped that row's version.
+
+[[plugin]]
+id = "chengongliang/hermes-agent"
+name = "Hermes Agent"
+version = "2.0.0"
+updated_at = 1791768734
+added_at = 1791768734
+author = "chengongliang"
+license = "MIT"
+icon = "sparkles"
+description = "Native Noctalia status and chat panel for Hermes Agent, driven by a local or remote-over-SSH bridge."
+plugin_api = 24
+tags = ["panel", "launcher", "utility", "ai"]
+
+[[plugin]]
+id = "chengongliang/market-watch"
+name = "Market Watch"
+version = "2.0.1"
+updated_at = 1791772514
+added_at = 1791772514
+author = "chengongliang"
+license = "MIT"
+icon = "chart-line"
+description = "Track crypto, metals and US stock quotes in the bar and a detail panel."
+plugin_api = 26
+tags = ["bar", "panel", "indicator", "utility"]

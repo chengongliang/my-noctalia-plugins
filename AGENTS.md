@@ -1,388 +1,234 @@
 # AI-Assisted Development Guidelines
 
-These guidelines are adapted from the official Noctalia legacy plugins repository: https://github.com/noctalia-dev/legacy-v4-plugins
+Guidelines for AI tools contributing to this Noctalia **v5** plugin repository. Adapted from the
+official Noctalia plugin repositories: https://github.com/noctalia-dev/official-plugins and
+https://github.com/noctalia-dev/community-plugins
 
-Guidelines for AI tools contributing to the Noctalia Plugins repository. **Study the official plugins before writing code** — especially `hello-world` (minimal reference) and `timer` (complex example with shared state). Official plugins have `"official": true` in their manifest.
+**Study the official plugins before writing code.** The most useful references are cloned to
+`/tmp/official-plugins` when available:
 
-## Plugin API
+- [`example`](https://github.com/noctalia-dev/official-plugins/tree/main/example) — the reference
+  plugin: bar widget (imperative *and* declarative), service, shortcut, launcher provider, panel.
+- `timer`, `world_clock`, `notes`, `screen_recorder`, `wallhaven` — real-world patterns for shared
+  state, persistence, panels, and background work.
+- `noctalia.d.luau` in the official repo root — the authoritative, machine-readable API definition.
+  **Always cross-check every `noctalia.*` / `ui.*` / `barWidget.*` / `panel.*` / `launcher.*` call
+  against it.** Prop tables are exhaustive; an unlisted prop is logged and skipped.
 
-Every plugin component receives a `pluginApi` property. This is the core interface:
+## Platform
 
-```qml
-Item {
-  property var pluginApi: null
+This repository targets **Noctalia v5+**. The v4 Quickshell/QML plugin format (`manifest.json`,
+`Main.qml`, `BarWidget.qml`, `Settings.qml`, `i18n/`) is legacy and no longer loads. `registry.json`
+is likewise replaced by `catalog.toml`.
 
-  // Settings access pattern — always use this fallback chain
-  property var cfg: pluginApi?.pluginSettings || ({})
-  property var defaults: pluginApi?.manifest?.metadata?.defaultSettings || ({})
-  property string message: cfg.message ?? defaults.message ?? "fallback"
-}
+A v5 plugin is:
+
+```
+my-plugin/
+  plugin.toml           # static manifest: identity + entries + settings schema
+  widget.luau           # entry scripts (Luau)
+  translations/en.json  # nested keys; label_key paths resolve into this tree
+  README.md
+  thumbnail.webp        # exactly 960x540
+  data.txt              # any files your scripts read at runtime
 ```
 
-**Key pluginApi members:**
-- `pluginSettings` — mutable settings object, persisted via `saveSettings()`
-- `manifest` — read-only manifest.json data
-- `pluginId`, `pluginDir` — plugin identity and path
-- `mainInstance` — reference to Main.qml instance (for shared state)
-- `tr(key, interpolations)` — translate a key, e.g. `pluginApi?.tr("widget.label")`
-- `trp(key, count, singular, plural)` — plural translation
-- `openPanel(screen, widget)`, `togglePanel(screen, widget)` — panel control
-- `saveSettings()` — persist `pluginSettings` to disk
-- `withCurrentScreen(callback)` — get current screen in IPC handlers
-- `panelOpenScreen` — the screen where this plugin's panel is open
+Plugin ids are `<author>/<plugin>` and the directory name matches the part after the slash.
 
-## Entry Points
+## Entry points
 
-Only include the entry points your plugin uses. Available types:
-
-| Entry Point | File | Purpose |
+| Table | Kind | Runs |
 |---|---|---|
-| `main` | Main.qml | Shared state, IPC handlers |
-| `barWidget` | BarWidget.qml | Bar widget |
-| `panel` | Panel.qml | Overlay panel |
-| `controlCenterWidget` | ControlCenterWidget.qml | Control center button |
-| `settings` | Settings.qml | Plugin settings UI |
-| `desktopWidget` | DesktopWidget.qml | Draggable desktop widget |
-| `desktopWidgetSettings` | DesktopWidgetSettings.qml | Desktop widget settings |
-| `launcherProvider` | LauncherProvider.qml | Launcher search provider |
+| `[[widget]]` | Bar widget | Placed on a bar; ticks + handles clicks/IPC |
+| `[[shortcut]]` | Control-center tile | A toggle tile in the control center |
+| `[[launcher_provider]]` | Launcher provider | Answers launcher queries behind a prefix |
+| `[[desktop_widget]]` | Desktop widget | A tile on the desktop; declares a `ui.*` tree |
+| `[[panel]]` | Panel | A pop-up surface; declares a `ui.*` tree, opened by id |
+| `[[service]]` | Headless service | Background loop, no UI — feeds the plugin's other entries |
 
-## Component Patterns
+There is **no `main` entry**. Entries are isolated Luau VMs that do not share memory; use a
+`[[service]]` plus `noctalia.state` for shared state.
 
-### Main.qml — Shared State
+Entry callbacks (define only the ones you need): `update()`, `onClick()`, `onRightClick()`,
+`onMiddleClick()`, `onScroll(axis, steps, startsGesture)`, `onQuery(text)` / `onActivate(id)`,
+`onOpen(context)` / `onClose()`, `onKey(chord, pressed)`, `onFrameTick(deltaMs)`, `onIpc(event, payload)`,
+`onConfigChanged()`, `onEnable()`, `onOutputsChanged()`, `onExit(signal, reason)`.
 
-```qml
-import QtQuick
-import Quickshell
-import Quickshell.Io
-import qs.Commons
+## Manifest rules
 
-Item {
-  id: root
-  property var pluginApi: null
+The official CI validator (`.github/workflows/validate-plugins.py`) is strict. Two rules that are easy
+to get wrong:
 
-  // Shared state accessible from other components via pluginApi.mainInstance
-  property bool isActive: false
+- **All of `id`, `name`, `version`, `author`, `license`, `icon`, `description` are required**, plus the
+  `tags` and `dependencies` arrays. `description` must be at most **120 characters**. `tags` must come
+  from the validator's allowed set. Unknown root or entry fields are **errors**.
+- **`translations/en.json` must use nested objects, never flat dotted keys.** Each object key must be a
+  single lowercase segment (`a-z 0-9 - _`, no leading underscore, no dots). A `label_key` is a dotted
+  *path* into that tree.
 
-  // IPC handler for CLI control (qs ipc call plugin:my-plugin commandName)
-  IpcHandler {
-    target: "plugin:my-plugin"
+Also: `placement` ∈ `attached`|`floating`; `position` from the validator's fixed list; `width`/`height`
+are a positive number or `"fill"`, and `"fill"` requires `placement = "floating"`; `default` is
+required on every setting; `layer` is not in the panel field allowlist.
 
-    function toggle() {
-      if (pluginApi) {
-        pluginApi.withCurrentScreen(screen => {
-          pluginApi.togglePanel(screen);
-        });
-      }
-    }
-  }
-}
+`plugin_api` is a positive integer declaring the **oldest** API level you need. Use the oldest level
+that covers your features — raising it drops the plugin from every older Noctalia. Levels: 3 mandatory
+baseline, 4 `httpStream`, 5 drag-and-drop, 6 `string_map`, 8 `dismiss_on_outside_click`, 9 closures in
+callback props, 10 `keyboard_focus`, 11 `persistent` panels, 12 system stats/`nowMs`, 13 `capture_keys`,
+14 `[widget.actions]`, 15 `openSettings`, 17 service enable lifecycle, 18 `setNeedsFrameTick`,
+21 `ui.markdown` + `submitOnEnter` + `stickToBottom`, 22 `require()`, 24 argv `runAsync`,
+26 `getSetting`, 28 `openContextMenu`, 29 graph pointer callbacks, 31 `getColor`, 32 container tooltips.
+
+## Settings
+
+Settings are **host-rendered from the manifest** — there is no settings script. Scope them deliberately:
+
+- `[[setting]]` at the manifest root — shared by every entry (a service, panel, and widget all read it).
+- `[[<entry>.setting]]` — that entry only; **not visible to other entries**.
+
+```toml
+[[setting]]
+key = "interval"
+type = "int"
+label_key = "settings.interval.label"
+description_key = "settings.interval.description"
+default = 5
+min = 1
+max = 60
 ```
 
-### BarWidget.qml
+Types: `string`, `string_list`, `string_map`, `bool`, `int`, `double`, `select`, `file`, `folder`,
+`glyph`, `color`. Plus `options` (for `select`, as `{ value, label_key }`), `visible_when`
+(`{ key, values }` — values compared as strings, so booleans are `"true"`/`"false"`), and `advanced`.
 
-```qml
-import Quickshell
-import qs.Commons
-import qs.Services.UI
-import qs.Widgets
+**`noctalia.getConfig(key)` is read-only and single-argument** (no `??` fallback chain). Reading an
+undeclared key logs a warning and returns `nil`. Plugins **cannot write settings** — if the user must
+change something at runtime from a panel or widget, persist it yourself under
+`noctalia.pluginDataDir()`.
 
-Item {
-  id: root
+## Component conventions
 
-  // Injected properties
-  property var pluginApi: null
-  property ShellScreen screen
-  property string widgetId: ""
-  property string section: ""
-  property int sectionWidgetIndex: -1
-  property int sectionWidgetsCount: 0
+```lua
+--!nonstrict
+-- bar widget entry
+local value = noctalia.getConfig("label")
 
-  // Settings
-  property var cfg: pluginApi?.pluginSettings || ({})
-  property var defaults: pluginApi?.manifest?.metadata?.defaultSettings || ({})
+function update()
+  noctalia.setUpdateInterval(1000)
+  barWidget.setText(tostring(value))
+end
 
-  // Bar layout awareness
-  readonly property string barPosition: Settings.getBarPositionForScreen(screen?.name)
-  readonly property bool isVertical: barPosition === "left" || barPosition === "right"
-  readonly property real capsuleHeight: Style.getCapsuleHeightForScreen(screen?.name)
-
-  implicitWidth: isVertical ? capsuleHeight : contentWidth
-  implicitHeight: isVertical ? contentHeight : capsuleHeight
-
-  // Context menu (right-click)
-  NPopupContextMenu {
-    id: contextMenu
-    model: [
-      { "label": pluginApi?.tr("menu.settings"), "action": "settings", "icon": "settings" }
-    ]
-    onTriggered: action => {
-      contextMenu.close();
-      PanelService.closeContextMenu(screen);
-      if (action === "settings") {
-        BarService.openPluginSettings(screen, pluginApi.manifest);
-      }
-    }
-  }
-
-  MouseArea {
-    anchors.fill: parent
-    acceptedButtons: Qt.LeftButton | Qt.RightButton
-    onClicked: mouse => {
-      if (mouse.button === Qt.LeftButton) {
-        if (pluginApi) pluginApi.togglePanel(root.screen, root);
-      } else if (mouse.button === Qt.RightButton) {
-        PanelService.showContextMenu(contextMenu, root, screen);
-      }
-    }
-  }
-}
+function onClick()
+  noctalia.togglePanel("author/plugin:panel")
+end
 ```
 
-### Panel.qml
+- Start every `.luau` file with `--!nonstrict`.
+- Build UI trees with `ui.*` (`ui.column`, `ui.row`, `ui.label`, `ui.glyph`, `ui.button`, `ui.toggle`,
+  `ui.slider`, `ui.input`, `ui.select`, `ui.scroll`, `ui.image`, `ui.box`, `ui.markdown`, `ui.graph`,
+  `ui.progress`, `ui.separator`, `ui.spacer`, `ui.dragSource`, `ui.dropZone`). Callbacks take a named
+  plugin global or a closure.
+- Bar widgets may use the imperative API (`setText`, `setGlyph`, `setImage`, `setTooltip`, `setColor`,
+  `setGlyphColor`, `setVisible`, `isVertical`, `outputName`) **or** `barWidget.render(tree)`. Once a
+  tree is rendered, later `setText`/`setGlyph` calls have no visible effect. The bar never takes
+  keyboard focus, so `ui.input`/`ui.select`/`ui.scroll` are skipped there.
+- Panel geometry is host-owned: declare `width`/`height`/`placement`/`position` on the `[[panel]]`
+  entry. The host also injects placement/position/open-near-click/layer as user settings.
+- **Bar gestures are user configuration.** A binding in `[widget.<name>.actions]` wins over your
+  callback. Every widget has a built-in `middle = "settings-open-widget"` binding, so `onMiddleClick`
+  only fires if you declare `middle = "none"`. There is no bar context-menu API —
+  `panel.openContextMenu` is panel-only and must be called from a `ui.button`'s `onRightClick`.
+- Use `noctalia.log` for logging. There is no `Logger` and no `console.log` in v5.
+- All user-facing strings go through `noctalia.tr(key, subst)` / `noctalia.trp(key, count, subst)`.
+  Interpolation uses `{name}` placeholders; plurals prefer `<key>.one` / `<key>.other`. **Do not add
+  fallback text after `tr()`** — the host returns the key on a miss.
+- Comments should explain *why*. Reference preserved legacy behaviour and deliberate divergences.
 
-```qml
-import QtQuick
-import QtQuick.Layouts
-import qs.Commons
-import qs.Services.UI
-import qs.Widgets
+## Common AI mistakes
 
-Item {
-  id: root
-  property var pluginApi: null
-
-  // Required for background rendering
-  readonly property var geometryPlaceholder: panelContainer
-
-  // Panel dimensions (always scale with uiScaleRatio)
-  property real contentPreferredWidth: 400 * Style.uiScaleRatio
-  property real contentPreferredHeight: 500 * Style.uiScaleRatio
-
-  // Enable panel attach/detach UI
-  readonly property bool allowAttach: true
-
-  anchors.fill: parent
-
-  Rectangle {
-    id: panelContainer
-    anchors.fill: parent
-    color: "transparent"
-
-    ColumnLayout {
-      anchors.fill: parent
-      anchors.margins: Style.marginL
-      spacing: Style.marginL
-
-      // Panel content using N* widgets
-    }
-  }
-}
-```
-
-### Settings.qml
-
-```qml
-import QtQuick
-import QtQuick.Layouts
-import qs.Commons
-import qs.Widgets
-
-ColumnLayout {
-  id: root
-  property var pluginApi: null
-
-  property var cfg: pluginApi?.pluginSettings || ({})
-  property var defaults: pluginApi?.manifest?.metadata?.defaultSettings || ({})
-
-  // Edit copies of settings (don't modify pluginSettings directly in bindings)
-  property string editMessage: cfg.message ?? defaults.message ?? ""
-
-  spacing: Style.marginL
-
-  NTextInput {
-    Layout.fillWidth: true
-    label: pluginApi?.tr("settings.message.label")
-    description: pluginApi?.tr("settings.message.desc")
-    text: root.editMessage
-    onTextChanged: root.editMessage = text
-  }
-
-  // Required — called by the shell when user saves
-  function saveSettings() {
-    if (!pluginApi) return;
-    pluginApi.pluginSettings.message = root.editMessage;
-    pluginApi.saveSettings();
-  }
-}
-```
-
-### ControlCenterWidget.qml
-
-```qml
-import Quickshell
-import qs.Widgets
-
-NIconButtonHot {
-  property ShellScreen screen
-  property var pluginApi: null
-
-  icon: "my-icon"
-  tooltipText: pluginApi?.tr("widget.tooltip")
-  onClicked: {
-    if (pluginApi) pluginApi.togglePanel(screen, this);
-  }
-}
-```
-
-## manifest.json
-
-```json
-{
-  "id": "my-plugin",
-  "name": "My Plugin",
-  "version": "1.0.0",
-  "minNoctaliaVersion": "4.4.1",
-  "author": "Author Name",
-  "license": "MIT",
-  "repository": "https://github.com/noctalia-dev/noctalia-plugins",
-  "description": "Concise description of what the plugin does",
-  "tags": ["Bar", "Panel"],
-  "entryPoints": {
-    "barWidget": "BarWidget.qml",
-    "panel": "Panel.qml",
-    "settings": "Settings.qml"
-  },
-  "dependencies": {
-    "plugins": []
-  },
-  "metadata": {
-    "defaultSettings": {
-      "message": "Hello",
-      "iconColor": "none"
-    }
-  }
-}
-```
-
-**Field rules:**
-- `id` must match the folder name
-- `version` starts at `1.0.0`; bump appropriately on updates
-- Whenever a plugin version changes, update the matching `registry.json` entry in the same change. Keep at least `version` and `lastUpdated` synchronized with the plugin manifest.
-- `minNoctaliaVersion` — verify the features you use exist in that version
-- `repository` — always `https://github.com/noctalia-dev/noctalia-plugins` for PRs to this repo
-- `tags` — use only tags from [README.md](./README.md#tags); include compositor tags if compositor-specific
-- `entryPoints` — only include the ones your plugin provides
-- `metadata.defaultSettings` — must contain defaults for every setting your plugin uses
-
-## Translations
-
-Plugin translations live in `i18n/*.json` (one file per language):
-
-```json
-{
-  "widget": {
-    "tooltip": "My Widget"
-  },
-  "menu": {
-    "settings": "Widget settings"
-  },
-  "settings": {
-    "message": {
-      "label": "Message",
-      "desc": "Custom message to display"
-    }
-  }
-}
-```
-
-Access via dot notation: `pluginApi?.tr("settings.message.label")`.
-Do **not** add fallback text after `tr()` calls — the translation system handles missing keys.
-
-## Code Style
-
-- **Use Noctalia widgets** (`NButton`, `NLabel`, `NBox`, `NSlider`, etc.) instead of raw Qt types (`Text`, `Rectangle`, `Button`). This ensures correct theming.
-- **Use `Style` constants** for margins, radii, colors: `Style.marginL`, `Style.radiusM`, `Color.mPrimary`
-- **Use `Logger`** for logging (`Logger.i`, `Logger.d`, `Logger.w`, `Logger.e`), not `console.log`
-- **Always null-coalesce** pluginApi access: `pluginApi?.tr(...)`, `pluginApi?.pluginSettings || ({})`
-- **camelCase** for variables/functions, **PascalCase** for component files
-- **No fallback values after `I18n.tr()` or `pluginApi?.tr()`** — the translation system returns the key on miss
-
-## Common Imports
-
-```qml
-import QtQuick
-import QtQuick.Layouts
-import Quickshell           // ShellScreen, IpcHandler
-import Quickshell.Io        // FileView, Process
-import qs.Commons           // Settings, Style, Color, Logger, I18n, Icons
-import qs.Services.UI       // PanelService, BarService
-import qs.Widgets           // N* components
-```
-
-## Common AI Mistakes
-
-These are the most frequent issues in AI-generated plugin PRs:
-
-- **Hallucinated APIs** — inventing functions or properties that don't exist in Quickshell, Qt, or the plugin API. Always verify against official plugins before using any API.
-- **Using raw Qt types** — `Text`, `Rectangle`, `Button` instead of `NLabel`, `NBox`, `NButton`. The N* widgets handle theming automatically.
-- **Hardcoded strings** — all user-facing text must go through `pluginApi?.tr()` with translations in `i18n/`.
-- **Wrong settings pattern** — modifying `pluginApi.pluginSettings` directly in bindings instead of using edit-copy properties and saving in `saveSettings()`.
-- **Missing `saveSettings()` function** in Settings.qml — the shell calls this; without it, settings won't persist.
-- **Incorrect manifest fields** — `id` not matching folder name, missing `defaultSettings` for settings the plugin uses, wrong `minNoctaliaVersion`.
-- **Using `console.log`** instead of `Logger.i` / `Logger.d` / `Logger.w` / `Logger.e`.
+- **Hallucinated APIs** — inventing `noctalia.*` members or `ui.*` props. Cross-check
+  `noctalia.d.luau`; unlisted props are silently skipped and only surface in the log.
+- **Using v4 idioms** — `pluginApi`, `pluginSettings`, `saveSettings()`, `manifest.metadata`,
+  `Main.qml`, `Settings.qml`, `console.log`, `Style.*`, `Color.*`, `PanelService`,
+  `BarService`, `I18n.tr`. None of these exist.
+- **Flat dotted translation keys**, camelCase keys, or a missing `translations/en.json`.
+- **Object-shaped settings** — `priceAlerts`-style maps and nested objects cannot be declared. Use a
+  JSON string, `string_map`, or `pluginDataDir()`.
+- **Assuming cross-entry config** — entry-scoped settings are invisible to other entries.
+- **Writing settings** — impossible; persist to `pluginDataDir()` instead.
+- **A README that fails CI** — it needs an H1 plus an intro of at least 8 words, and non-empty
+  `## Plugin` and `## Usage` sections. `## Plugin` must document the manifest id and every entry id in
+  backticks, each panel's `noctalia msg panel-toggle <id>:<entry>` command, and the launcher prefix as
+  `/prefix`. `## Requirements` is required when `dependencies` is non-empty (and must mention each
+  dependency in backticks); `## Settings` is required when any setting is declared. No raw HTML.
 
 ## Performance
 
-- **Avoid expensive property bindings** — complex calculations should be in functions, not inline bindings. Simple ternaries and property reads are fine.
-- **Use `Loader`** for heavy content that isn't always visible — panels already do this, but apply it within your own components too.
-- **Debounce rapid updates** with `Timer` — e.g. if reacting to slider changes that trigger expensive operations.
-- **Prefer signals/bindings over polling** — don't use `Timer` to repeatedly check state when a signal or binding would work.
+- Avoid expensive inline bindings; prefer functions and explicit re-render calls.
+- `noctalia.setUpdateInterval(ms)` is clamped to ≥ 16 ms. Poll no faster than you need to; the docs'
+  `systemStats()` sample cadence is ~2 s and calling it more often returns the same sample.
+- `ui.scroll` has `stickToBottom`, `scrollToBottomRev`, and `revealKey` for transcripts and long lists.
+- Use `Key`ed nodes in lists so reordering reuses native controls and closures stay aligned.
+- Use `require("./lib/x.luau")` to split logic into testable modules.
+
+## Verification
+
+Always run both of these before considering a change done:
+
+```bash
+noctalia plugins lint .                          # declared settings vs getConfig() calls, entry files
+python3 .github/workflows/validate-plugins.py    # manifests, translations, README, thumbnail, entries
+```
+
+`catalog.toml` is generated by `python3 .github/workflows/update-catalog.py` and **is committed here**
+(unlike the upstream repos, where CI regenerates it) because a git source cannot list plugins without
+it. Regenerate it whenever a plugin's `version` or `plugin_api` changes.
 
 ## Testing
 
-- [ ] Plugin loads and runs with `qs -c noctalia-shell`
+- [ ] Plugin loads and runs with `noctalia -c` / the running shell
 - [ ] Test with both light and dark themes
-- [ ] Test on target compositors (Niri, Hyprland, Sway, Labwc, MangoWC) — especially if using compositor-specific features
-- [ ] Verify settings persist across restarts
-- [ ] Check edge cases: empty states, missing data, rapid interactions
+- [ ] Test on target compositors (Niri, Hyprland, Sway, Labwc, MangoWC) if using compositor features
+- [ ] Verify settings persist and that runtime state survives a reload
+- [ ] Check edge cases: empty states, missing data, network failure, rapid interactions
+- [ ] `noctalia plugins lint` and `validate-plugins.py` are both clean
 
-## PR Checklist
+## PR checklist
 
-- [ ] Plugin tested with Noctalia Shell (`qs -c noctalia-shell`)
-- [ ] `manifest.json` is valid with all required fields
-- [ ] `id` matches folder name
-- [ ] If the plugin version changed, the matching `registry.json` entry has the same version and an updated `lastUpdated` timestamp
-- [ ] All user-facing strings use `pluginApi?.tr()` with translations in `i18n/`
-- [ ] Settings use the `cfg → defaults → hardcoded` fallback chain
-- [ ] `Settings.qml` exposes a `saveSettings()` function
-- [ ] No hallucinated APIs — all functions and properties verified against official plugins
-- [ ] No `console.log` — use `Logger` instead
-- [ ] Uses N* widgets, not raw Qt types
-- [ ] `preview.png` included (16:9, 960x540)
-- [ ] `README.md` included with description and features
+- [ ] `plugin_api` is the oldest level that covers the features actually used
+- [ ] `plugin.toml` valid, `id` matches `<author>/<folder>`, `default` present on every setting
+- [ ] `translations/en.json` nested, lowercase single-segment keys, complete for every referenced key
+- [ ] `README.md` satisfies the CI structure rules; `thumbnail.webp` is 960x540
+- [ ] Every user-facing string uses `noctalia.tr()` / `trp()`
+- [ ] No hallucinated APIs — all calls verified against `noctalia.d.luau`
+- [ ] No `console.log`; `noctalia.log` used instead
+- [ ] `catalog.toml` regenerated if `version` or `plugin_api` changed
+- [ ] Runtime-mutable state persisted under `noctalia.pluginDataDir()`, not inside the plugin directory
 
-## Pull Requests
+## Pull requests
 
 **Title format:** `type(plugin-name): short description`
 
 ```
-feat(my-plugin): add brightness control panel
-fix(timer): handle zero-duration edge case
+feat(market-watch): add rapid-move alerts
+fix(hermes-agent): handle a missing bridge token
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `chore`
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `chore`.
 
-**Description should include:**
-- What was changed and why
-- How to test the changes
-- References to related issues (e.g. "Closes #123")
+The description should explain what changed and why, how to test it, and reference related issues
+(for example "Closes #123"). Community submission rules also require declaring every external command
+in `dependencies` and accounting for each network call, filesystem write, and spawned process.
 
 ## Resources
 
-- [Official Plugins](https://github.com/noctalia-dev/noctalia-plugins) — study `hello-world` and `timer` first
-- [Plugin Documentation](https://docs.noctalia.dev/development/plugins/overview/)
-- [Development Guidelines](https://docs.noctalia.dev/development/guideline/)
-- [Noctalia Widgets](https://github.com/noctalia-dev/noctalia-shell/tree/main/Widgets) — all N* components
+- [Plugin documentation](https://docs.noctalia.dev/noctalia/plugins/development/)
+- [Manifest & settings](https://docs.noctalia.dev/noctalia/plugins/development/manifest/)
+- [Entry scripts](https://docs.noctalia.dev/noctalia/plugins/development/entries/)
+- [Declarative UI](https://docs.noctalia.dev/noctalia/plugins/development/declarative-ui/)
+- [Runtime API](https://docs.noctalia.dev/noctalia/plugins/development/runtime-api/)
+- [Plugin API versions](https://docs.noctalia.dev/noctalia/plugins/development/plugin-api/)
+- [Official plugins](https://github.com/noctalia-dev/official-plugins) — study `example` and `timer` first
+
 <!-- TRELLIS:START -->
 # Trellis Instructions
 
