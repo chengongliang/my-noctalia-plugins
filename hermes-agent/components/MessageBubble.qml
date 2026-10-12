@@ -47,12 +47,21 @@ Rectangle {
       }
     }
 
-    NText {
-      text: root.content
-      pointSize: Style.fontSizeM
-      color: root.fromUser ? Color.mOnPrimary : Color.mOnSurface
-      wrapMode: Text.Wrap
+    // Assistant replies are markdown (headings, tables, code fences, links).
+    // User messages stay literal so stray `*`/`#` never reinterpret what the
+    // user typed.
+    MarkdownView {
+      pluginApi: root.pluginApi
       Layout.fillWidth: true
+      markdown: !root.fromUser
+      text: root.content
+      basePointSize: Style.fontSizeM
+      bodyColor: root.fromUser ? Color.mOnPrimary : Color.mOnSurface
+      mutedColor: root.fromUser ? Color.mOnPrimary : Color.mOnSurfaceVariant
+      outlineColor: root.fromUser ? Color.mOnPrimary : Color.mOutline
+      tableHeaderColor: root.fromUser ? Color.mOnPrimary : Color.mSurfaceVariant
+      inlineCodeColor: root.fromUser ? Color.mOnPrimary : Color.mTertiary
+      accentColor: root.fromUser ? Color.mOnPrimary : Color.mPrimary
     }
   }
 }

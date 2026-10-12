@@ -115,7 +115,10 @@
   },
   "bubble": {
     "you": "You",
-    "hermes": "Hermes"
+    "hermes": "Hermes",
+    "code": "code",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "errors": {
     "emptyPrompt": "Prompt is empty",

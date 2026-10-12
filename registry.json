@@ -22,7 +22,7 @@
     {
       "id": "hermes-agent",
       "name": "Hermes Agent",
-      "version": "1.1.0",
+      "version": "1.2.0",
       "official": false,
       "author": "nomadx, FelipeMayerDev",
       "description": "Native Noctalia status and side-panel interface for Hermes Agent. Supports a client-only mode to drive a Hermes bridge running on a remote server over SSH.",
@@ -35,7 +35,7 @@
         "Launcher",
         "AI"
       ],
-      "lastUpdated": "2026-07-06T10:58:26+08:00"
+      "lastUpdated": "2026-09-20T16:40:00+08:00"
     }
   ]
 }

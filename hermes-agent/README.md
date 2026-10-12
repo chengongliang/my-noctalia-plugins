@@ -2,7 +2,7 @@
 
 Native Noctalia plugin for Hermes Agent.
 
-Source: [`Nomadcxx/legacy-v4-plugins:add-hermes-agent`](https://github.com/Nomadcxx/legacy-v4-plugins/tree/add-hermes-agent).
+Source: [`Nomadcxx/legacy-v4-plugins:add-hermes-agent`](https://github.com/Nomadcxx/legacy-v4-plugins/tree/add-hermes-agent), with local markdown rendering improvements.
 
 Shows live Hermes status in the bar, provides a full chat panel with streaming responses, tool-event activity, approval prompts, interrupt, one-shot prompts, and a launcher provider using `>hermes`.
 
@@ -10,6 +10,7 @@ Shows live Hermes status in the bar, provides a full chat panel with streaming r
 
 - **Bar widget**: traffic-light status indicator (online / busy / needs you / degraded / offline) with click-to-expand summary popup.
 - **Panel**: persistent chat with Hermes — send prompts, watch streaming responses, approve tool calls, interrupt, start / resume sessions.
+- **Markdown rendering**: assistant replies are rendered as rich text — headings, ordered/unordered (nested) lists, tables with a tinted header row, blockquotes, horizontal rules, links, bold / italic / strikethrough, inline code, and fenced code blocks with a language tag and copy button. Text stays selectable. User messages are shown literally so `*`/`#` typed by hand are never reinterpreted.
 - **Launcher provider**: type `>hermes` in the Noctalia launcher to open the panel, start a session, resume the latest session, or send a one-shot prompt.
 - **Settings UI**: configure bridge host / port, state file, Hermes home, poll interval, default provider / model, auto-start bridge, hide-when-idle, pin panel, show tool activity.
 
@@ -113,8 +114,8 @@ re-polls with the tunnel up.
 
 ## Credits
 
-Original `hermes-agent` plugin by **nomadx**, from
-[`Nomadcxx/legacy-v4-plugins:add-hermes-agent`](https://github.com/Nomadcxx/legacy-v4-plugins/tree/add-hermes-agent).
+Original `hermes-agent` plugin by **nomadx**
+([PR #934](https://github.com/noctalia-dev/legacy-v4-plugins/pull/934)).
 Client-only mode (remote bridge over SSH) contributed by FelipeMayerDev.
 
 ## License
