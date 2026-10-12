@@ -46,3 +46,9 @@ When a plugin version changes, update the corresponding registry entry's
 tables, translations, bundled assets, and registry metadata in the same change.
 Do not claim a provider or setting is supported in documentation until its
 adapter, UI, and fixture/manual checks exist.
+
+If divergent branches independently used the same version for different
+backward-compatible feature sets, their integrated union is a new release:
+advance to the next minor version instead of choosing either branch's version.
+Then re-run the manifest/default, registry, README, and installed-plugin sync
+checks against the combined settings schema.
