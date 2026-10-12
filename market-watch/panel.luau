@@ -245,15 +245,17 @@ local function render()
   -- The table is hidden while loading or while the plugin reports a problem, so the
   -- status box is the only thing on screen then (v4 toggled the same two blocks).
   if busy ~= true and ((health == nil) or health.error == "") then
-    -- The headings sit OUTSIDE the scroll region. Inside it they scroll away with the
-    -- rows, so any watch list longer than the panel showed a column of unlabelled
-    -- numbers; a ten-coin list already overflows the declared height once the title and
-    -- footer are accounted for. Both live in one column so the 6 px row gap is kept
-    -- between the headings and the first row.
-    table.insert(body, ui.column({ flexGrow = 1, gap = ROW_GAP }, {
-      header_row(),
-      ui.scroll({ key = "table", flexGrow = 1, gap = ROW_GAP }, rows),
-    }))
+    -- The headings sit outside the scroll region: inside it they scroll away with the
+    -- rows, leaving a column of unlabelled numbers once the list is longer than the
+    -- panel. They are a DIRECT sibling of the scroll, which is what every official
+    -- plugin does - wrapping the scroll in another flex column stops the host bounding
+    -- its height, and an unbounded scroll region has nothing to scroll.
+    table.insert(body, header_row())
+    table.insert(body, ui.scroll({
+      key = "table",
+      flexGrow = 1,
+      gap = ROW_GAP,
+    }, rows))
   end
 
   table.insert(body, ui.label({
@@ -335,3 +337,4 @@ end
 function onConfigChanged()
   render()
 end
+
