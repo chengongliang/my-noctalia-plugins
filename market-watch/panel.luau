@@ -16,13 +16,29 @@ local providers = require("./lib/providers.luau")
 local PLUGIN_ID = "chengongliang/market-watch"
 local PANEL_SETTINGS = PLUGIN_ID .. ":settings"
 
--- Column widths lifted from v4's table (logical px, Icons/scaled by the host).
+-- Table geometry.
+--
+-- v4 hard-coded column widths totalling 632 px, which happened to fill the 680 px panel
+-- it declared. The v5 host owns the panel width - it is a user-overridable setting, and a
+-- floating panel is routinely laid out wider than the manifest asks for - so a fixed
+-- total leaves the table marooned on the left with dead space beside it. Every column is
+-- therefore a container with a *minimum* width, and the asset column flexes to absorb
+-- whatever slack the host's width leaves; the numbers stay right-aligned against the
+-- panel edge instead of drifting.
+--
+-- The widths deliberately live on the row containers and never on the labels. A label's
+-- own `width` is not honoured inside a flex row here, which is precisely what made the
+-- header drift out of line with the data: the data rows led with two containers (logo,
+-- asset) that did reserve their width, while every header cell was a bare label that
+-- shrank to its text, bunching the headings together over the wrong columns.
 local COL_LOGO = 32
-local COL_COIN = 80
-local COL_PRICE = 140
-local COL_CHANGE = 110
-local COL_HIGH = 120
-local COL_LOW = 120
+local COLS = {
+  { key = "coin", min = 96, flex = 1, align = "start" },
+  { key = "price", min = 112, align = "end" },
+  { key = "change", min = 92, align = "end" },
+  { key = "high", min = 100, align = "end" },
+  { key = "low", min = 100, align = "end" },
+}
 local ROW_GAP = 6
 
 local config = nil
@@ -62,14 +78,27 @@ local function name_for(row)
   return symbol
 end
 
-local function header_cell(text, width)
-  return ui.label({
+-- One table cell. The container carries the column width (containers do honour it) and the
+-- label fills that container and aligns its own text inside it, so the header and the data
+-- rows are built from a single geometry definition and cannot drift apart.
+local function text_cell(index, text, props)
+  local spec = COLS[index]
+  local cell = { minWidth = spec.min, align = "center" }
+  if spec.flex ~= nil then
+    cell.flexGrow = spec.flex
+  end
+  local label = {
     text = text,
-    width = width,
-    fontSize = 11,
-    fontWeight = "bold",
-    color = "on_surface_variant",
-  })
+    flexGrow = 1,
+    maxLines = 1,
+    textAlign = spec.align,
+  }
+  if props ~= nil then
+    for key, value in pairs(props) do
+      label[key] = value
+    end
+  end
+  return ui.row(cell, { ui.label(label) })
 end
 
 local function logo_cell(row)
@@ -77,11 +106,11 @@ local function logo_cell(row)
   if path ~= nil and path ~= "" then
     -- v4 masked the logo into a circle (OpacityMask); ui.image only rounds
     -- corners, so radius = half the box is the closest equivalent.
-    return ui.row({ width = COL_LOGO, align = "center", justify = "center" }, {
+    return ui.row({ minWidth = COL_LOGO, align = "center", justify = "center" }, {
       ui.image({ path = path, width = 24, height = 24, radius = 12, fit = "contain" }),
     })
   end
-  return ui.row({ width = COL_LOGO, align = "center", justify = "center" }, {
+  return ui.row({ minWidth = COL_LOGO, align = "center", justify = "center" }, {
     ui.label({ text = fallback_badge(row.symbol), color = "on_surface_variant" }),
   })
 end
@@ -97,28 +126,14 @@ local function data_row(row)
 
   return ui.row({ key = row.id, align = "center", gap = ROW_GAP }, {
     logo_cell(row),
-    ui.row({ width = COL_COIN }, {
-      ui.label({ text = name_for(row), color = "on_surface", fontWeight = "medium", maxLines = 1 }),
-    }),
-    ui.label({
-      text = providers.format_price(quote ~= nil and quote.close),
-      width = COL_PRICE,
-      color = price_color,
-    }),
-    ui.label({
-      text = providers.format_change(quote ~= nil and quote.change),
-      width = COL_CHANGE,
-      color = price_color,
-    }),
-    ui.label({
-      text = providers.format_price(quote ~= nil and quote.high),
-      width = COL_HIGH,
+    text_cell(1, name_for(row), { color = "on_surface", fontWeight = "medium" }),
+    text_cell(2, providers.format_price(quote ~= nil and quote.close), { color = price_color }),
+    text_cell(3, providers.format_change(quote ~= nil and quote.change), { color = price_color }),
+    text_cell(4, providers.format_price(quote ~= nil and quote.high), {
       fontSize = 12,
       color = "on_surface_variant",
     }),
-    ui.label({
-      text = providers.format_price(quote ~= nil and quote.low),
-      width = COL_LOW,
+    text_cell(5, providers.format_price(quote ~= nil and quote.low), {
       fontSize = 12,
       color = "on_surface_variant",
     }),
@@ -126,14 +141,18 @@ local function data_row(row)
 end
 
 local function header_row()
-  return ui.row({ align = "center", gap = ROW_GAP, key = "table_header" }, {
-    ui.box({ width = COL_LOGO, height = 1 }),
-    header_cell(noctalia.tr("panel.coin"), COL_COIN),
-    header_cell(noctalia.tr("panel.price"), COL_PRICE),
-    header_cell(noctalia.tr("panel.change"), COL_CHANGE),
-    header_cell(noctalia.tr("panel.high"), COL_HIGH),
-    header_cell(noctalia.tr("panel.low"), COL_LOW),
-  })
+  -- The logo column stays empty here. It used to be a 1 px `ui.box`, but a box is painted
+  -- (it draws its fill), so the header carried a stray 32 px dash above the logos. An
+  -- empty container reserves the same width and paints nothing.
+  local cells = { ui.row({ minWidth = COL_LOGO }, {}) }
+  for index, spec in ipairs(COLS) do
+    cells[index + 1] = text_cell(index, noctalia.tr("panel." .. spec.key), {
+      fontSize = 11,
+      fontWeight = "bold",
+      color = "on_surface_variant",
+    })
+  end
+  return ui.row({ align = "center", gap = ROW_GAP, key = "table_header" }, cells)
 end
 
 local function status_box()

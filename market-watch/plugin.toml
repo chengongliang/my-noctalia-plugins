@@ -15,7 +15,7 @@
 
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.1"
+version = "2.0.2"
 plugin_api = 26
 author = "chengongliang"
 license = "MIT"
@@ -117,11 +117,15 @@ id = "service"
 entry = "service.luau"
 
 # Market table. Geometry is host-owned and stays user-adjustable.
+#
+# The height fits the default five-coin watch list plus a couple of rows; a longer list
+# scrolls inside the table. It was 480, which left a third of the panel empty between the
+# last row and the "data source" footer.
 [[panel]]
 id = "watch"
 entry = "panel.luau"
 width = 680
-height = 480
+height = 320
 placement = "attached"
 position = "center"
 open_near_click = false
