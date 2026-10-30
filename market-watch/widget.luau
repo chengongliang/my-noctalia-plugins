@@ -33,6 +33,14 @@ local statuses = {}
 local health = nil
 local busy = true
 
+-- Watchdog state. The functions live below render() because they redraw on recovery;
+-- only the fields render() reads are declared up here.
+local watchdog_alive_at = 0
+local watchdog_stalled = false
+local watchdog_ticked_at = 0
+local revive_attempts = 0
+local revive_at = 0
+
 -- v4 kept a flag before clearing a tooltip: clearTooltip() on a widget that never
 -- had one is documented to crash, so only clear what was set.
 local has_tooltip = false
@@ -79,7 +87,9 @@ local function render()
     return
   end
 
-  if busy == true then
+  -- "..." only while the service is genuinely starting. Once the watchdog has declared
+  -- it dead, sitting on the loading text forever is a lie: fall through to "--".
+  if busy == true and not watchdog_stalled then
     barWidget.render(container()({ gap = 4, align = "center" }, {
       ui.label({ text = "..." }),
     }))
@@ -91,7 +101,7 @@ local function render()
     barWidget.render(container()({ gap = 4, align = "center" }, {
       ui.label({ text = "--" }),
     }))
-    set_tooltip(noctalia.tr("panel.no_data"))
+    set_tooltip(noctalia.tr(watchdog_stalled and "panel.service_stalled" or "panel.no_data"))
     return
   end
 
@@ -118,15 +128,138 @@ local function render()
   })
 end
 
+-- ── Service watchdog ────────────────────────────────────────────────────────
+-- A host reload can leave the service half-alive: its callbacks still answer IPC, but
+-- the entry's top-level startup never ran, so nothing is published and `busy` sits on
+-- true forever while the bar shows "...". Nothing inside that VM can fix it - it has no
+-- heartbeat to run a check on - so the fix has to come from another entry, which is
+-- this widget.
+--
+-- Liveness is measured as "how long since any market.* state arrived", not by `busy`:
+-- a service that died right after publishing busy=false must still be spotted. The
+-- service republishes at least once per refresh cycle, so silence across several cycles
+-- is the signal.
+--
+-- Restarting it takes disable + enable (the failure was an in-place reconfigure, and a
+-- second in-place reconfigure does not revive it). Enable also recreates this widget, so
+-- the two commands are handed to a detached shell: `setsid -f` returns immediately and
+-- the restart survives this widget being torn down by its own disable.
+local WATCHDOG_MIN_MS = 3000
+local WATCHDOG_MAX_MS = 240000
+local WATCHDOG_COOLDOWN_MS = 300000
+local WATCHDOG_MAX_ATTEMPTS = 3
+local WATCHDOG_CHECK_MS = 1000
+local NOCTALIA_BIN = "/usr/bin/noctalia"
+
+watchdog_alive_at = noctalia.nowMs()
+
+-- The attempt count and timestamp have to outlive the widget the disable destroys, so
+-- they ride on host state. Nothing else reads this key.
+local function save_watchdog()
+  noctalia.state.set("market.watchdog", { attempts = revive_attempts, at = revive_at })
+end
+
+local function mark_alive()
+  watchdog_alive_at = noctalia.nowMs()
+  if not watchdog_stalled then
+    return
+  end
+  watchdog_stalled = false
+  revive_attempts = 0
+  save_watchdog()
+  noctalia.log("market-watch: the service is publishing again")
+  render()
+end
+
+local function watchdog_timeout()
+  -- Three refresh cycles: floor keeps a 1 s interval from becoming a tripwire, cap keeps
+  -- a 60 s interval from waiting ten minutes.
+  local refresh = tonumber(config and config.refresh_interval) or 10
+  local timeout = math.floor(refresh * 3000 + 0.5)
+  if timeout < WATCHDOG_MIN_MS then
+    timeout = WATCHDOG_MIN_MS
+  elseif timeout > WATCHDOG_MAX_MS then
+    timeout = WATCHDOG_MAX_MS
+  end
+  return timeout
+end
+
+local function revive_service(silent_ms)
+  local now = noctalia.nowMs()
+  if revive_attempts >= WATCHDOG_MAX_ATTEMPTS then
+    return
+  end
+  if revive_at ~= 0 and now - revive_at < WATCHDOG_COOLDOWN_MS then
+    return
+  end
+
+  revive_attempts = revive_attempts + 1
+  revive_at = now
+  save_watchdog()
+
+  -- `|| true`: disabling an already-disabled plugin is not worth aborting the restart
+  -- over, and the enable below is the step that actually matters.
+  local script = "sleep 0.5; "
+    .. NOCTALIA_BIN .. " msg plugins disable " .. PLUGIN_ID .. " >/dev/null 2>&1 || true; "
+    .. "sleep 2; "
+    .. NOCTALIA_BIN .. " msg plugins enable " .. PLUGIN_ID .. " >/dev/null 2>&1 || true"
+  local ok, started = pcall(function()
+    return noctalia.runAsync({ "setsid", "-f", "/bin/sh", "-c", script }, function() end, 10000)
+  end)
+
+  local seconds = math.floor(silent_ms / 1000)
+  if ok and started then
+    noctalia.log(
+      "market-watch: no state for " .. seconds .. "s; asked the host to restart the service (attempt "
+        .. revive_attempts .. "/" .. WATCHDOG_MAX_ATTEMPTS .. ")"
+    )
+    return
+  end
+
+  -- No subprocess from this entry: at least make the failure visible instead of leaving
+  -- the bar on "--" with no explanation.
+  noctalia.notifyError(
+    noctalia.tr("panel.title"),
+    noctalia.tr("panel.service_stalled")
+      .. "\n" .. NOCTALIA_BIN .. " msg plugins disable " .. PLUGIN_ID
+      .. " && " .. NOCTALIA_BIN .. " msg plugins enable " .. PLUGIN_ID
+  )
+end
+
+-- The host ticks widgets at ~250 ms; the 1 s gate below is what keeps this cheap.
+function update()
+  local now = noctalia.nowMs()
+  if now - watchdog_ticked_at < WATCHDOG_CHECK_MS then
+    return
+  end
+  watchdog_ticked_at = now
+
+  local silent = now - watchdog_alive_at
+  if silent < watchdog_timeout() then
+    return
+  end
+
+  if not watchdog_stalled then
+    watchdog_stalled = true
+    noctalia.log("market-watch: no state from the service for " .. math.floor(silent / 1000) .. "s")
+    render()
+  end
+  revive_service(silent)
+end
+
 -- ── State ───────────────────────────────────────────────────────────────────
+-- Every one of these callbacks is a liveness signal: they only fire when the service
+-- publishes, which is exactly what stops happening when it is half-alive.
 
 noctalia.state.watch("market.config", function(value)
   config = value
+  mark_alive()
   render()
 end)
 
 noctalia.state.watch("market.bar", function(value)
   bar = value
+  mark_alive()
   render()
 end)
 
@@ -134,26 +267,44 @@ noctalia.state.watch("market.watch", function(value)
   -- Kept only so the wheel can walk the list in the order the panel shows. No render:
   -- the service republishes market.bar whenever a change moves the bar asset.
   watch = value or {}
+  mark_alive()
 end)
 
 noctalia.state.watch("market.quotes", function(value)
   quotes = value or {}
+  mark_alive()
   render()
 end)
 
 noctalia.state.watch("market.status", function(value)
   statuses = value or {}
+  mark_alive()
   render()
 end)
 
 noctalia.state.watch("market.health", function(value)
   health = value
+  mark_alive()
   render()
 end)
 
 noctalia.state.watch("market.busy", function(value)
   busy = value ~= false
+  mark_alive()
   render()
+end)
+
+-- Restart accounting restored from a previous instance: the disable this widget asks for
+-- destroys it, so the counter and the cooldown cannot live in locals alone.
+noctalia.state.watch("market.watchdog", function(value)
+  if type(value) ~= "table" then
+    return
+  end
+  revive_attempts = math.max(revive_attempts, tonumber(value.attempts) or 0)
+  local at = tonumber(value.at) or 0
+  if at > revive_at then
+    revive_at = at
+  end
 end)
 
 -- ── Events ──────────────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@
     "loading": "Loading...",
     "low": "Low",
     "no_data": "No data",
+    "service_stalled": "The quote service stopped responding",
     "price": "Price",
     "refresh": "Refresh",
     "refresh_now": "Refresh now",

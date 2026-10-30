@@ -27,6 +27,7 @@
     "loading": "加载中...",
     "low": "最低",
     "no_data": "无数据",
+    "service_stalled": "行情服务无响应",
     "price": "最新价",
     "refresh": "刷新",
     "refresh_now": "立即刷新",
