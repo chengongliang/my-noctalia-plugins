@@ -46,7 +46,15 @@
 --   * instruments are built on demand from the bare symbol, verified per symbol
 --     where a small endpoint exists (Binance, OKX), and otherwise confirmed by
 --     the first quote;
---   * search runs against the small search endpoints, debounced and cached.
+--   * search runs against the small search endpoints, debounced and cached;
+--   * publication is split. A landed quote and a carousel advance used to rewrite the
+--     whole eleven-key state map, so a twelve-instrument cycle published thirteen times
+--     and the allocation churn alone could exhaust the budget. They now mark what changed
+--     and update() flushes each group (logos, bar, quotes) at most once per heartbeat;
+--   * work a callback abort could strand is reset inside a pcall. The shell enforces the
+--     budget by raising a Lua error, which skips every later line of the aborted
+--     callback - that is how a stuck `pumping` flag or a leaked in-flight slot used to
+--     stop all refreshing until the entry was reloaded.
 --
 -- This file (and lib/store.luau) deliberately stays Lua 5.4-parseable - no `+=`,
 -- no string interpolation - so an offline mock host can execute the real service
@@ -76,6 +84,9 @@ local PANEL_WATCH = PLUGIN_ID .. ":watch"
 local BASE_TICK_MS = 500
 local MAX_CONCURRENT_QUOTES = 4
 local RETRY_CAP_MS = 300000
+-- Twice curl's --max-time plus the runAsync timeout, so only a genuinely lost callback is
+-- treated as a stale slot.
+local IN_FLIGHT_TIMEOUT_MS = 60000
 local LOGO_RETRY_COOLDOWN_MS = 60000
 local MAX_SEARCH_RESULTS = 10
 -- Budget guards. 100 KiB of JSON is the practical ceiling for one decode.
@@ -164,8 +175,8 @@ local quotes = {}
 local status = {}
 local queue = {}
 local queued = {}
-local in_flight = {}
-local active_count = 0
+local in_flight = {} -- instrument id -> generation of the request in flight
+local in_flight_at = {} -- instrument id -> nowMs() when that request started
 local pumping = false
 local generation = 0
 
@@ -261,20 +272,47 @@ local function public_config()
   }
 end
 
-local function publish()
+-- Publication is split three ways. `publish()` writes the whole picture and is what the
+-- command paths use; the two hot paths - a quote landing, a carousel advance - only mark
+-- the group they touched and update() flushes it. Every state.set deep-copies and
+-- serialises its map, so republishing everything once per landed quote was the most
+-- expensive thing this file did, and its allocation churn fed the GC on the same thread
+-- the CPU budget is measured on.
+local pending_quotes = false
+local pending_bar = false
+local pending_logos = false
+
+local function publish_bar()
   noctalia.state.set("market.config", public_config())
   noctalia.state.set("market.bar", bar_info())
-  noctalia.state.set("market.watch", watch_rows())
-  noctalia.state.set("market.instruments", copy_map(instruments))
+end
+
+local function publish_quotes()
   noctalia.state.set("market.quotes", copy_map(quotes))
   noctalia.state.set("market.status", copy_map(status))
-  noctalia.state.set("market.logos", copy_map(logos))
-  noctalia.state.set("market.health", { error = health.error, error_code = health.error_code })
   noctalia.state.set("market.busy", busy)
+end
+
+local function publish_logos()
+  noctalia.state.set("market.logos", copy_map(logos))
+end
+
+local function publish()
+  publish_bar()
+  noctalia.state.set("market.watch", watch_rows())
+  noctalia.state.set("market.instruments", copy_map(instruments))
+  publish_quotes()
+  publish_logos()
+  noctalia.state.set("market.health", { error = health.error, error_code = health.error_code })
   noctalia.state.set("market.search", search_payload)
   if config_message ~= nil then
     noctalia.state.set("market.config_message", config_message)
   end
+  -- Cleared only once every key was written: a publish aborted halfway would otherwise
+  -- drop the group it had not reached yet until the next unrelated full publish.
+  pending_bar = false
+  pending_quotes = false
+  pending_logos = false
 end
 
 local function persist()
@@ -876,7 +914,7 @@ local function start_quote_request(instrument, job_generation)
   end
 
   in_flight[instrument.id] = job_generation
-  active_count = active_count + 1
+  in_flight_at[instrument.id] = noctalia.nowMs()
   set_quote_loading(instrument)
 
   local done = false
@@ -887,68 +925,112 @@ local function start_quote_request(instrument, job_generation)
     done = true
 
     if job_generation == generation then
-      if not ok then
-        -- Oversized or truncated bodies are never parsed; the message says so.
-        local message = store.trim(reason)
-        if reason == "too-large" or reason == "truncated" then
-          message = noctalia.tr("panel.response_too_large")
-        end
-        set_quote_failure(instrument, "network-error", message)
-      else
-        local decoded = decode_body(body)
-        if decoded == nil then
-          set_quote_failure(instrument, "parse-error", noctalia.tr("panel.bad_response"))
-        elseif providers.parse_error(static.source, decoded) then
-          -- An explicit provider error means this symbol is not tradable here:
-          -- stop retrying it and label the row, exactly like v4's unresolved path.
-          noctalia.log("market-watch: " .. instrument.id .. " is not available from " .. static.source)
-          mark_unavailable(instrument)
+      -- The shell enforces its per-callback CPU budget by raising a Lua error, and this
+      -- body does the most work of anything in the file (a JSON decode plus the state it
+      -- keeps). Inside a pcall because an abort here would otherwise skip the slot release
+      -- below - an entry that is never released starves that instrument for good.
+      local handled, failure = pcall(function()
+        if not ok then
+          -- Oversized or truncated bodies are never parsed; the message says so.
+          local message = store.trim(reason)
+          if reason == "too-large" or reason == "truncated" then
+            message = noctalia.tr("panel.response_too_large")
+          end
+          set_quote_failure(instrument, "network-error", message)
         else
-          local parsed = providers.parse_quote(static.source, decoded, instrument)
-          if valid_quote(parsed) then
-            set_quote_success(instrument, parsed)
+          local decoded = decode_body(body)
+          if decoded == nil then
+            set_quote_failure(instrument, "parse-error", noctalia.tr("panel.bad_response"))
+          elseif providers.parse_error(static.source, decoded) then
+            -- An explicit provider error means this symbol is not tradable here:
+            -- stop retrying it and label the row, exactly like v4's unresolved path.
+            noctalia.log("market-watch: " .. instrument.id .. " is not available from " .. static.source)
+            mark_unavailable(instrument)
           else
-            set_quote_failure(instrument, "invalid-response", noctalia.tr("panel.bad_response"))
+            local parsed = providers.parse_quote(static.source, decoded, instrument)
+            if valid_quote(parsed) then
+              set_quote_success(instrument, parsed)
+            else
+              set_quote_failure(instrument, "invalid-response", noctalia.tr("panel.bad_response"))
+            end
           end
         end
+      end)
+      if not handled then
+        -- Deliberately not recorded as a quote failure: the request did arrive, the
+        -- callback just ran out of budget. The next cycle asks again.
+        noctalia.log("market-watch: quote handling interrupted for " .. instrument.id .. ": " .. tostring(failure))
       end
     end
 
     if in_flight[instrument.id] == job_generation then
       in_flight[instrument.id] = nil
+      in_flight_at[instrument.id] = nil
     end
-    active_count = math.max(0, active_count - 1)
     busy = false
-    publish()
+    -- Flushed by update(), at most once per tick: a cycle lands twelve of these.
+    pending_quotes = true
     pump_queue()
   end
 
-  api_get(url, QUOTE_MAX_BYTES, finish)
+  -- A budget interrupt is a Lua error. If it lands between taking the slot above and
+  -- runAsync actually starting the process, the slot would stay taken with no request
+  -- behind it (the job has already left the queue). Released here so the next cycle
+  -- retries at once instead of waiting out IN_FLIGHT_TIMEOUT_MS.
+  local started, start_failure = pcall(api_get, url, QUOTE_MAX_BYTES, finish)
+  if not started then
+    if in_flight[instrument.id] == job_generation then
+      in_flight[instrument.id] = nil
+      in_flight_at[instrument.id] = nil
+    end
+    noctalia.log("market-watch: request interrupted for " .. instrument.id .. ": " .. tostring(start_failure))
+  end
 end
 
 -- Bounded worker pool: at most MAX_CONCURRENT_QUOTES curls at a time, so a long
 -- watch list cannot spawn a process per instrument. The `pumping` guard keeps a
 -- synchronous completion from re-entering the loop.
+--
+-- Occupied slots are derived from `in_flight` instead of being counted: a counter used to
+-- drift whenever a callback was aborted halfway (one direction only), and a counter stuck
+-- at the limit blocks every later pump just as effectively as a stuck guard flag.
+local function active_requests()
+  local count = 0
+  for _ in pairs(in_flight) do
+    count = count + 1
+  end
+  return count
+end
+
 pump_queue = function()
   if pumping then
     return
   end
   pumping = true
 
-  while active_count < MAX_CONCURRENT_QUOTES and #queue > 0 do
-    local job = table.remove(queue, 1)
-    if queued[job.id] == job.generation then
-      queued[job.id] = nil
-    end
-    if job.generation == generation then
-      local instrument = instruments[job.id] or instrument_for(job.id)
-      if instrument ~= nil and instrument.status ~= "unresolved" then
-        start_quote_request(instrument, job.generation)
+  -- A budget interrupt is a plain Lua error, so it unwinds through here. Held in a pcall
+  -- purely to reset `pumping`: left set, every later pump becomes a no-op and the plugin
+  -- stops refreshing silently until the entry is reloaded, with nothing in the log but
+  -- stale prices.
+  local ok, failure = pcall(function()
+    while active_requests() < MAX_CONCURRENT_QUOTES and #queue > 0 do
+      local job = table.remove(queue, 1)
+      if queued[job.id] == job.generation then
+        queued[job.id] = nil
+      end
+      if job.generation == generation then
+        local instrument = instruments[job.id] or instrument_for(job.id)
+        if instrument ~= nil and instrument.status ~= "unresolved" then
+          start_quote_request(instrument, job.generation)
+        end
       end
     end
-  end
-
+  end)
   pumping = false
+  if not ok then
+    -- Whatever is left in the queue is picked up by the next tick.
+    noctalia.log("market-watch: pump interrupted: " .. tostring(failure))
+  end
 end
 
 local function fetch_quote(reference, force)
@@ -980,8 +1062,21 @@ local function fetch_quote(reference, force)
   if not force and state ~= nil and (state.next_retry_at or 0) > 0 and noctalia.nowMs() < state.next_retry_at then
     return
   end
-  if in_flight[id] == generation or queued[id] == generation then
+  if queued[id] == generation then
     return
+  end
+  if in_flight[id] == generation then
+    -- A callback can be lost: the shell aborts one that blows its CPU budget, and a curl
+    -- that is killed never reports back. The slot is treated as gone after the timeout so
+    -- a lost answer cannot pin the instrument out of every later cycle (a manual refresh
+    -- included, since it shares this guard).
+    local started_at = in_flight_at[id] or 0
+    if noctalia.nowMs() - started_at < IN_FLIGHT_TIMEOUT_MS then
+      return
+    end
+    noctalia.log("market-watch: dropping the stale request for " .. id)
+    in_flight[id] = nil
+    in_flight_at[id] = nil
   end
 
   table.insert(queue, { id = id, generation = generation })
@@ -996,7 +1091,9 @@ refresh_market_data = function(force)
   for _, reference in ipairs(runtime.watch_list) do
     fetch_quote(reference, force == true)
   end
-  publish()
+  -- Flushed by update(): a cycle runs inside the heartbeat, and a full publish here was
+  -- one of the two calls that most often blew the per-callback budget.
+  pending_quotes = true
 end
 
 -- ── Logos ───────────────────────────────────────────────────────────────────
@@ -1191,15 +1288,20 @@ request_logo = function(reference)
     logo_failures[id] = nil
   end
 
-  -- Reuse a previous session's download before touching the network.
+  -- Reuse a previous session's download before touching the network. The adopted path is
+  -- marked for publication: `logos` used to reach the UI only because refresh_market_data
+  -- published everything on every cycle, and a cached logo takes exactly this branch,
+  -- which never touches the network and therefore never published on its own.
   local cached_png = logo_path(id, "png")
   if cached_file(cached_png) then
     logos[id] = cached_png
+    pending_logos = true
     return
   end
   local cached_svg = logo_path(id, "svg")
   if cached_file(cached_svg) then
     logos[id] = cached_svg
+    pending_logos = true
     return
   end
 
@@ -1213,7 +1315,7 @@ request_logo = function(reference)
       -- A failed lookup is remembered so the sweep backs off for a minute.
       logo_failures[id] = noctalia.nowMs()
     end
-    publish()
+    pending_logos = true
   end
 
   if instrument.logo_url ~= "" then
@@ -1241,6 +1343,15 @@ end
 local function sweep_logos()
   for _, reference in ipairs(runtime.watch_list) do
     request_logo(reference)
+  end
+  -- Adopting an on-disk logo happens synchronously here and changes what every row draws,
+  -- so it is published before this function returns instead of waiting for the tick flush:
+  -- the first sweep runs in the busiest tick of the session (cycle + publish), and being
+  -- cut short by a budget abort used to leave the panels without icons for a whole
+  -- cooldown. Twelve short strings, once a minute.
+  if pending_logos then
+    publish_logos()
+    pending_logos = false
   end
 end
 
@@ -2109,7 +2220,7 @@ function onConfigChanged()
     queue = {}
     queued = {}
     in_flight = {}
-    active_count = 0
+    in_flight_at = {}
     generation = generation + 1
     price_alert_states = {}
     rapid_history = {}
@@ -2163,6 +2274,12 @@ function update()
   if instruments_dirty then
     instruments_dirty = false
     store.save_instruments(instruments)
+    -- register_instrument() marks the metadata dirty whenever an instrument is resolved,
+    -- verified or upgraded by its first quote. The two views that show that metadata are
+    -- published here, so an unavailable row cannot keep a stale availability badge now
+    -- that a landed quote only republishes quotes/status/busy.
+    noctalia.state.set("market.watch", watch_rows())
+    noctalia.state.set("market.instruments", copy_map(instruments))
   end
 
   -- Debounced search: only the newest query reaches the network, and only after
@@ -2205,14 +2322,14 @@ function update()
 
   -- Bar carousel. It runs on this same heartbeat - no second timer - and advances on
   -- schedule whether or not a panel is open. The advance is a table lookup plus the
-  -- publish below.
+  -- two-key publish that the tick flushes below.
   if carousel_enabled() and #runtime.watch_list > 0 then
     if next_carousel_at == 0 then
       next_carousel_at = now + carousel_interval_seconds() * 1000
     elseif now >= next_carousel_at then
       next_carousel_at = now + carousel_interval_seconds() * 1000
       if carousel_advance() then
-        publish()
+        pending_bar = true
       end
     end
   elseif next_carousel_at ~= 0 then
@@ -2223,9 +2340,33 @@ function update()
   -- Keep draining the queue between cycles: a worker slot may have freed up.
   pump_queue()
 
+  -- Flush what the hot paths marked. One write per changed group per tick instead of a
+  -- full eleven-key publish per landed quote. Logos go first: their group is the one the
+  -- UI cannot recompute, so an abort in a later branch must not starve it.
+  if pending_logos then
+    publish_logos()
+    pending_logos = false
+  end
+  if pending_bar then
+    publish_bar()
+    pending_bar = false
+  end
+  if pending_quotes then
+    publish_quotes()
+    pending_quotes = false
+  end
+
   if now - last_logo_sweep_at >= LOGO_RETRY_COOLDOWN_MS then
-    last_logo_sweep_at = now
-    sweep_logos()
+    -- The sweep is the only place a cached logo is adopted, and `last_logo_sweep_at` is
+    -- advanced only once it completed: a budget abort halfway used to postpone the rest
+    -- by a full cooldown, which is indistinguishable from "the logos are gone".
+    local swept, sweep_failure = pcall(sweep_logos)
+    if swept then
+      last_logo_sweep_at = now
+    else
+      last_logo_sweep_at = now - LOGO_RETRY_COOLDOWN_MS + 5000
+      noctalia.log("market-watch: logo sweep interrupted: " .. tostring(sweep_failure))
+    end
   end
 end
 
