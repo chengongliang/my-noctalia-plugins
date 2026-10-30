@@ -15,7 +15,7 @@
 
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.10"
+version = "2.0.11"
 plugin_api = 26
 author = "chengongliang"
 license = "MIT"

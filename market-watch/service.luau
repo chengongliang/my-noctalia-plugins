@@ -20,6 +20,8 @@
 --     market.logos        instrument id -> absolute path of a cached logo
 --     market.health       { error, error_code } - plugin-wide problems only
 --     market.busy         true until the current load settles (v4's isLoading)
+--     market.heartbeat    nowMs() of the last publication, so a client can tell a quiet
+--                         service from a dead one without depending on state.watch
 --     market.search       { query, results, pending, nonce } - reply to the search op
 --     market.config_message { key, detail, error, nonce } - export/import feedback
 --
@@ -287,6 +289,14 @@ local function publish_bar()
   noctalia.state.set("market.bar", bar_info())
 end
 
+-- One number per publication batch. The widget polls it instead of subscribing: a hot
+-- reload of widget.luau can leave its state.watch callbacks dead, and then a watchdog that
+-- measures liveness by callbacks would be blind exactly when it is needed. A moving
+-- heartbeat is the one signal that cannot be faked by a dead subscription.
+local function publish_heartbeat()
+  noctalia.state.set("market.heartbeat", noctalia.nowMs())
+end
+
 local function publish_quotes()
   noctalia.state.set("market.quotes", copy_map(quotes))
   noctalia.state.set("market.status", copy_map(status))
@@ -313,6 +323,7 @@ local function publish()
   pending_bar = false
   pending_quotes = false
   pending_logos = false
+  publish_heartbeat()
 end
 
 local function persist()
@@ -2355,6 +2366,10 @@ function update()
     publish_quotes()
     pending_quotes = false
   end
+  -- Written every tick, not only when something changed: it is the widget's proof that
+  -- this VM is still running its loop at all, which is what its watchdog has to tell apart
+  -- from a half-alive entry. One number, twice a second.
+  publish_heartbeat()
 
   if now - last_logo_sweep_at >= LOGO_RETRY_COOLDOWN_MS then
     -- The sweep is the only place a cached logo is adopted, and `last_logo_sweep_at` is
