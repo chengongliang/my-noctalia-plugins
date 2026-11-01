@@ -12,10 +12,15 @@
 # 2.0.1 - the bulk instrument catalogue was removed: a service callback may not
 # decode ~1.4 MB of JSON (Huobi spot) and subprocess stdout is truncated at 1 MiB,
 # so instruments are built on demand from the symbol instead. See service.luau.
+#
+# 2.0.12 - both panels poll noctalia.state in update() instead of subscribing. Watch
+# subscriptions die for good after a hot reload of an entry (2.0.10 worked around it in
+# the bar widget), and watch never replays the current value, so the market panel's first
+# open could render before any publish and stay blank for a whole refresh interval.
 
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.11"
+version = "2.0.12"
 plugin_api = 26
 author = "chengongliang"
 license = "MIT"

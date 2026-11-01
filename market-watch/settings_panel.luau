@@ -26,6 +26,12 @@ local instruments = {}
 local search_reply = nil
 local config_message = nil
 local health = nil
+-- The last drawing, so a poll that changes nothing visible does not rebuild the settings
+-- tree (hundreds of controls). See display_signature().
+local rendered_signature = nil
+-- Nonce of the export/import notice already shown or already dropped on open. The service
+-- keeps its copy, so polling must not resurrect a message on every tick.
+local seen_message_nonce = nil
 
 -- Search box state. ui.input is uncontrolled: `value` seeds the field once, so
 -- clearing it needs a fresh `key` (the same trick wallhaven uses).
@@ -520,6 +526,26 @@ end
 
 -- ── Render ──────────────────────────────────────────────────────────────────
 
+-- Everything render() draws, folded into one string. The payload tables are compared
+-- through noctalia.json.encode: the host serializes a Lua table with sorted object keys,
+-- so equal content always yields an equal string (the service republishes identical
+-- config/watch/instruments every cycle, and those must not rebuild the tree).
+local function display_signature()
+  local function encoded(value)
+    return tostring((noctalia.json.encode(value)))
+  end
+  return table.concat({
+    tostring(show_close_button),
+    tostring(health and health.error or ""),
+    tostring(config_message and config_message.nonce or ""),
+    search_text ~= "" and "search" or "",
+    encoded(config),
+    encoded(watch),
+    encoded(instruments),
+    encoded(search_reply),
+  }, "\31")
+end
+
 local function render()
   local body = {
     ui.row({ align = "center", gap = 8, key = "settings_header" }, {
@@ -562,41 +588,49 @@ local function render()
   }))
 
   panel.render(ui.column({ flexGrow = 1, gap = 12 }, body))
+  -- Commit only after the tree was handed over: a render the host's CPU budget aborts is
+  -- then retried on the next tick instead of freezing the panel on stale content.
+  rendered_signature = display_signature()
 end
 
 -- ── State ───────────────────────────────────────────────────────────────────
+--
+-- State is POLLED, not subscribed. `noctalia.state.watch` can go permanently silent after
+-- a hot reload of this file (the file watcher reloads it on every save, and a plugin update
+-- does too) while the service keeps publishing - the panel would then freeze on its last
+-- drawing. The bar widget and the market panel were moved to polling for the same reason.
+-- Polling also seeds the first open: a panel runtime is created on first open and this
+-- panel would otherwise render before any state callback could arrive.
+--
+-- The tick is one second while the panel is open (panel.setWantsSecondTicks), and the tree
+-- is rebuilt only when display_signature() changes.
+local function poll_state()
+  config = noctalia.state.get("market.config")
+  watch = noctalia.state.get("market.watch") or {}
+  instruments = noctalia.state.get("market.instruments") or {}
+  health = noctalia.state.get("market.health")
+  search_reply = noctalia.state.get("market.search")
+  -- A notice is shown only once: the service keeps `market.config_message` around, so the
+  -- nonce decides whether this is a new export/import result or the same one again.
+  local message = noctalia.state.get("market.config_message")
+  local nonce = message ~= nil and message.nonce or nil
+  if nonce ~= nil and nonce ~= seen_message_nonce then
+    seen_message_nonce = nonce
+    config_message = message
+  end
+end
 
-noctalia.state.watch("market.config", function(value)
-  config = value
-  render()
-end)
-
-noctalia.state.watch("market.watch", function(value)
-  watch = value or {}
-  render()
-end)
-
-noctalia.state.watch("market.instruments", function(value)
-  instruments = value or {}
-  render()
-end)
-
-noctalia.state.watch("market.health", function(value)
-  health = value
-  render()
-end)
-
-noctalia.state.watch("market.search", function(value)
-  search_reply = value
-  render()
-end)
-
-noctalia.state.watch("market.config_message", function(value)
-  config_message = value
-  render()
-end)
+panel.setWantsSecondTicks(true)
 
 -- ── Events ──────────────────────────────────────────────────────────────────
+
+function update()
+  poll_state()
+  if display_signature() == rendered_signature then
+    return
+  end
+  render()
+end
 
 function onSearchChange(value)
   search_text = value or ""
@@ -619,9 +653,13 @@ function onOpen(_context)
   -- Read on every open: it does not reload when the shell setting changes, and
   -- only an explicit false hides the button (the host's own convention).
   show_close_button = noctalia.getSetting("shell.show_close_buttons") ~= false
-  -- Re-ask for the current results (the reply is a cache from a previous open) and
-  -- drop a stale export/import message.
+  -- Drop a notice left over from a previous open by marking the stored nonce as consumed:
+  -- the service does not clear its copy, so a poll must not bring it back.
+  local stored = noctalia.state.get("market.config_message")
+  seen_message_nonce = stored ~= nil and stored.nonce or seen_message_nonce
   config_message = nil
+  -- Take the live snapshot before the first paint.
+  poll_state()
   render()
   send({ op = "search", query = search_text })
 end

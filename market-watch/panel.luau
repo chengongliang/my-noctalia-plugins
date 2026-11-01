@@ -49,9 +49,11 @@ local logos = {}
 local health = nil
 local busy = true
 local show_close_button = true
--- The rise/fall palette is mode-dependent; refreshed on every render so a theme switch is
+-- The rise/fall palette is mode-dependent; refreshed on every poll so a theme switch is
 -- picked up. See providers.price_color.
 local dark_mode = true
+-- The last drawing, so a poll that changes nothing visible does not rebuild the table.
+local rendered_signature = nil
 
 local command_seq = 0
 
@@ -186,6 +188,38 @@ local function status_box()
   })
 end
 
+-- Everything render() draws, folded into one string. A quiet market costs one poll and one
+-- compare per tick instead of a rebuilt table, and a quote moving inside the same
+-- formatting bucket produces no redraw at all.
+local function display_signature()
+  local parts = {
+    tostring(dark_mode),
+    tostring(show_close_button),
+    tostring(busy),
+    tostring(health and health.error or ""),
+    tostring(config and config.refresh_interval),
+    tostring(config and config.source),
+    tostring(config and config.red_rises),
+  }
+  for _, row in ipairs(watch) do
+    local quote = quotes[row.id]
+    local status = statuses[row.id]
+    parts[#parts + 1] = table.concat({
+      tostring(row.id),
+      tostring(row.symbol),
+      tostring(row.name),
+      tostring(logos[row.id]),
+      tostring(quote and quote.close),
+      tostring(quote and quote.change),
+      tostring(quote and quote.high),
+      tostring(quote and quote.low),
+      tostring(quote and quote.is_rising),
+      tostring(status and status.status),
+    }, "\30")
+  end
+  return table.concat(parts, "\31")
+end
+
 local function render()
   dark_mode = noctalia.isDarkMode()
 
@@ -269,46 +303,51 @@ local function render()
   }))
 
   panel.render(ui.column({ flexGrow = 1, gap = 12 }, body))
+  -- Commit only after the tree was handed over: a render the host's CPU budget aborts is
+  -- then retried on the next tick instead of freezing the panel on stale content.
+  rendered_signature = display_signature()
 end
 
 -- ── State ───────────────────────────────────────────────────────────────────
+--
+-- State is POLLED, not subscribed. `noctalia.state.watch` looked like the natural fit but
+-- the host's subscriptions can die for good after a hot reload of this file - the file
+-- watcher does one on every save, and a plugin update does one too - while the service
+-- keeps publishing normally; the entry then freezes on its last drawing with nothing in
+-- the log. The bar widget hit exactly that and was moved to polling (see widget.luau); a
+-- panel must not depend on the broken hook either.
+--
+-- Polling also fixes the first open. A panel runtime is created on first open, and watch
+-- never replays the current value, so a panel opened between two service publishes used to
+-- render the busy/empty defaults and stay blank until the next publish - up to the whole
+-- refresh_interval (31 s with a slow setting). A poll at open (onOpen) renders the real
+-- snapshot immediately.
+--
+-- The polling tick is one second while the panel is open (panel.setWantsSecondTicks), and a
+-- tree is rebuilt only when the drawing actually changes - see display_signature().
+local function poll_state()
+  config = noctalia.state.get("market.config")
+  watch = noctalia.state.get("market.watch") or {}
+  quotes = noctalia.state.get("market.quotes") or {}
+  statuses = noctalia.state.get("market.status") or {}
+  logos = noctalia.state.get("market.logos") or {}
+  health = noctalia.state.get("market.health")
+  -- `false` is a meaningful stored value, so an `or` default would swallow it.
+  busy = noctalia.state.get("market.busy") ~= false
+  dark_mode = noctalia.isDarkMode()
+end
 
-noctalia.state.watch("market.config", function(value)
-  config = value
-  render()
-end)
-
-noctalia.state.watch("market.watch", function(value)
-  watch = value or {}
-  render()
-end)
-
-noctalia.state.watch("market.quotes", function(value)
-  quotes = value or {}
-  render()
-end)
-
-noctalia.state.watch("market.status", function(value)
-  statuses = value or {}
-  render()
-end)
-
-noctalia.state.watch("market.logos", function(value)
-  logos = value or {}
-  render()
-end)
-
-noctalia.state.watch("market.health", function(value)
-  health = value
-  render()
-end)
-
-noctalia.state.watch("market.busy", function(value)
-  busy = value ~= false
-  render()
-end)
+panel.setWantsSecondTicks(true)
 
 -- ── Events ──────────────────────────────────────────────────────────────────
+
+function update()
+  poll_state()
+  if display_signature() == rendered_signature then
+    return
+  end
+  render()
+end
 
 function onRefreshClicked()
   -- v4's refresh button refetched every watched instrument without forcing, so
@@ -328,12 +367,12 @@ function onOpen(_context)
   -- Read on every open: it does not reload when the shell setting changes.
   -- Only an explicit false hides the button (the host's own convention).
   show_close_button = noctalia.getSetting("shell.show_close_buttons") ~= false
+  -- Take the live snapshot before the first paint: without it the first frame would draw
+  -- the defaults and wait for a service publish that may be a whole refresh_interval away.
+  poll_state()
   render()
 end
 
--- Switching between a light and a dark palette changes which rise/fall shades apply, and
--- re-theming arrives here as a config change. The panel does not poll, so without this an
--- open panel would keep the previous mode's colours until something else re-rendered it.
-function onConfigChanged()
-  render()
-end
+-- Switching between a light and a dark palette changes which rise/fall shades apply.
+-- update() polls and folds the theme into the display signature, so a re-theme repaints on
+-- the next tick without a callback.
