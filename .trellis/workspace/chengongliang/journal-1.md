@@ -138,3 +138,39 @@ Merged main alert notifications into the multi-currency scrolling branch, resolv
 ### Next Steps
 
 - 原 generalize-market-watch 任务继续保留，本次不归档。
+
+
+## Session 5: Market Watch 分时图实现与本地提交
+<!-- trellis-session: v=2 fp=38e8a31b1bda49d9 -->
+
+**Date**: 2026-11-04
+**Task**: Market Watch 分时图实现与本地提交
+**Branch**: `feat/market-watch-intraday-chart`
+
+### Summary
+
+按已确认方案实现弹窗内24小时分时图；独立审查、离线测试和必跑门禁通过。用户确认后本地提交并归档，未推送。
+
+### Main Changes
+
+- 资产行进入同源历史详情、真实采样悬停读数、可见时30秒刷新和失败保留；版本2.1.0/API29。
+- 补齐历史源适配、请求隔离、双语文档与测试；临时安装测试后文件已还原。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3eed570` | feat(market-watch): add intraday price charts |
+
+### Testing
+
+- [OK] history48项、service41项以及panel/provider/alerts回归通过；lint0错误0警告、2个manifest校验、diff检查通过。
+- [OK] 原生界面验收被锁屏阻挡；OKX请求HTTP403，成功网络路径未实测。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 解锁后完成原生布局、明暗主题和悬停交互验收；在可用网络验证OKX成功路径。
