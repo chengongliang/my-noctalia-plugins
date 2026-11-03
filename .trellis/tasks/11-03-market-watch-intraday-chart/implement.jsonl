@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/11-03-market-watch-intraday-chart/research/findings.md","reason":"当前v5事实、官方API29图表限制、历史接口实测与过期v4规范处理优先级"}
+{"file":".trellis/tasks/11-03-market-watch-intraday-chart/design.md","reason":"历史数据归一化、按资产隔离、epoch失效、详情生命周期、缺口处理与兼容契约"}
+{"file":".trellis/spec/guides/boundary-review.md","reason":"历史响应到service/state/panel边界的无效输入、过期回调和失败保留原则；API按当前v5设计"}
+{"file":".trellis/spec/guides/reuse-and-ownership.md","reason":"解析/状态/UI的所有权与复用原则；旧QML文件名按本任务v5研究映射"}

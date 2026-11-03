@@ -8,10 +8,11 @@
 -- The v4 "center vs click" panel_position setting is dropped for the same reason:
 -- placement, position and open-near-click are host-injected panel settings.
 --
--- Rows are read-only, exactly as in v4: clicking a symbol did nothing there and
--- nothing is wired here either.
+-- History is requested only by the visible detail view; the service keeps ownership
+-- of provider access so it shares the same proxy, validation and instrument identity.
 
 local providers = require("./lib/providers.luau")
+local history = require("./lib/history.luau")
 
 local PLUGIN_ID = "chengongliang/market-watch"
 local PANEL_SETTINGS = PLUGIN_ID .. ":settings"
@@ -40,6 +41,7 @@ local COLS = {
   { key = "low", min = 92, align = "end" },
 }
 local ROW_GAP = 6
+local HISTORY_REFRESH_MS = 30000
 
 local config = nil
 local watch = {}
@@ -54,6 +56,22 @@ local show_close_button = true
 local dark_mode = true
 -- The last drawing, so a poll that changes nothing visible does not rebuild the table.
 local rendered_signature = nil
+local opened = false
+local selected_id = nil
+local selected_source = nil
+local selected_market = nil
+local selected_proxy = nil
+local selected_epoch = nil
+local history_snapshot = nil
+local prepared = nil
+local prepared_signature = nil
+local pointer_handlers = {}
+local hover_point = nil
+local next_history_at = 0
+local pending_since = nil
+local pending_revision = nil
+local render
+local select_asset
 
 local command_seq = 0
 
@@ -134,7 +152,12 @@ local function data_row(row)
       dark_mode
     )
 
-  return ui.row({ key = row.id, align = "center", gap = ROW_GAP }, {
+  return ui.row({
+    key = row.id,
+    align = "center",
+    gap = ROW_GAP,
+    onClick = function() select_asset(row.id) end,
+  }, {
     logo_cell(row),
     text_cell(1, name_for(row), { color = "on_surface", fontWeight = "medium" }),
     text_cell(2, providers.format_price(quote ~= nil and quote.close), { color = price_color }),
@@ -199,8 +222,27 @@ local function display_signature()
     tostring(health and health.error or ""),
     tostring(config and config.refresh_interval),
     tostring(config and config.source),
+    tostring(config and config.market_type),
     tostring(config and config.red_rises),
+    tostring(selected_id),
+    tostring(history_snapshot and history_snapshot.epoch),
+    tostring(history_snapshot and history_snapshot.revision),
+    tostring(history_snapshot and history_snapshot.status),
+    tostring(history_snapshot and history_snapshot.error_code),
+    tostring(pending_since ~= nil),
+    tostring(hover_point and hover_point.timestamp_ms),
+    tostring(hover_point and hover_point.price),
+    noctalia.formatTime("%Z %z"),
   }
+  if selected_id ~= nil then
+    for _, row in ipairs(watch) do
+      if row.id == selected_id then
+        parts[#parts + 1] = tostring(row.symbol) .. "\30" .. tostring(row.name)
+        break
+      end
+    end
+    return table.concat(parts, "\31")
+  end
   for _, row in ipairs(watch) do
     local quote = quotes[row.id]
     local status = statuses[row.id]
@@ -220,25 +262,175 @@ local function display_signature()
   return table.concat(parts, "\31")
 end
 
-local function render()
+local function selected_row()
+  for _, row in ipairs(watch) do
+    if row.id == selected_id then
+      return row
+    end
+  end
+  return nil
+end
+
+local function local_time(timestamp_ms, pattern)
+  return noctalia.formatTime(pattern or "%m-%d %H:%M %Z", math.floor(timestamp_ms / 1000))
+end
+
+local function detail_message()
+  if history_snapshot == nil then
+    return noctalia.tr("panel.loading"), "on_surface_variant"
+  end
+  if history_snapshot.status == "stale" then
+    return noctalia.tr("history.update_failed"), "error"
+  end
+  if history_snapshot.status == "loading" or pending_since ~= nil then
+    return noctalia.tr("panel.loading"), "on_surface_variant"
+  end
+  if history_snapshot.status == "unavailable" then
+    return noctalia.tr("settings.unavailable"), "on_surface_variant"
+  end
+  if history_snapshot.error_code == "no-data" then
+    return noctalia.tr("history.no_data"), "on_surface_variant"
+  end
+  if history_snapshot.status == "error" then
+    return noctalia.tr("history.load_failed"), "error"
+  end
+  return nil
+end
+
+local function chart_body()
+  local point = hover_point or prepared.points[#prepared.points]
+  local currency = string.upper(providers.quote_currency(config.source))
+  local rising = prepared.points[#prepared.points].price >= prepared.points[1].price
+  local color = providers.price_color(rising, config.red_rises, true, dark_mode)
+  local interval_minutes = math.floor(prepared.interval_ms / 6000 + 0.5) / 10
+  local pieces = {}
+  local cursor = prepared.window_start
+  local span = prepared.window_end - prepared.window_start
+  for index, segment in ipairs(prepared.segments) do
+    if segment.start_at > cursor then
+      table.insert(pieces, ui.spacer({ width = 0, flexGrow = (segment.start_at - cursor) / span }))
+    end
+    if #segment.points >= 2 then
+      if pointer_handlers[index] == nil then
+        local target_id = selected_id
+        pointer_handlers[index] = function(x, _y)
+          if not opened or selected_id ~= target_id then return end
+          local next_point = history.point_at(segment, x)
+          if next_point ~= nil and (hover_point == nil
+            or next_point.timestamp_ms ~= hover_point.timestamp_ms or next_point.price ~= hover_point.price) then
+            hover_point = next_point
+            render()
+          end
+        end
+      end
+      table.insert(pieces, ui.graph({
+        key = "history-" .. selected_id .. "-" .. tostring(index),
+        width = 0,
+        flexGrow = (segment.end_at - segment.start_at) / span,
+        values = segment.values,
+        color = color,
+        lineWidth = 2,
+        fillOpacity = 0.1,
+        onPointerMove = pointer_handlers[index],
+        onPointerLeave = "onHistoryPointerLeave",
+      }))
+    end
+    cursor = segment.end_at
+  end
+  if cursor < prepared.window_end then
+    table.insert(pieces, ui.spacer({ width = 0, flexGrow = (prepared.window_end - cursor) / span }))
+  end
+
+  return {
+    ui.label({
+      key = "history-readout",
+      text = noctalia.tr(hover_point and "history.sample" or "history.latest_sample", {
+        time = local_time(point.timestamp_ms), price = providers.to_string(point.price), currency = currency,
+      }),
+      fontSize = 16, fontWeight = "medium", color = "on_surface", maxLines = 1,
+    }),
+    ui.label({
+      text = noctalia.tr("history.interval", { minutes = string.format("%g", interval_minutes) })
+        .. " · " .. noctalia.formatTime("%Z %z") .. " · " .. currency,
+      fontSize = 11, color = "on_surface_variant", maxLines = 1,
+    }),
+    ui.row({ key = "history-plot", flexGrow = 1, minHeight = 100, gap = 8, align = "stretch" }, {
+      ui.column({ width = 76, justify = "space_between" }, {
+        ui.label({ text = providers.to_string(prepared.high), fontSize = 11, color = "on_surface_variant" }),
+        ui.label({ text = providers.to_string(prepared.low), fontSize = 11, color = "on_surface_variant" }),
+      }),
+      ui.row({ flexGrow = 1, gap = 0, align = "stretch" }, pieces),
+    }),
+    ui.row({ gap = 8 }, {
+      ui.spacer({ width = 76 }),
+      ui.row({ flexGrow = 1, justify = "space_between" }, {
+        ui.label({ text = local_time(prepared.window_start), fontSize = 11, color = "on_surface_variant" }),
+        ui.label({ text = local_time(prepared.window_end), fontSize = 11, color = "on_surface_variant" }),
+      }),
+    }),
+    ui.label({
+      text = noctalia.tr("history.coverage", {
+        first = local_time(prepared.first_at), last = local_time(prepared.last_at),
+      }) .. (prepared.has_gaps and (" · " .. noctalia.tr("history.gaps")) or ""),
+      fontSize = 11, color = "on_surface_variant", maxLines = 1,
+    }),
+    ui.label({
+      text = noctalia.tr(history_snapshot.basis == "candle" and "history.candle_basis" or "history.price_basis"),
+      fontSize = 11, color = "on_surface_variant", maxLines = 2,
+    }),
+  }
+end
+
+local function detail_body(body)
+  local drawable = false
+  for _, segment in ipairs(prepared and prepared.segments or {}) do
+    if #segment.points >= 2 then drawable = true; break end
+  end
+  if drawable then
+    for _, node in ipairs(chart_body()) do table.insert(body, node) end
+  else
+    table.insert(body, ui.spacer({ flexGrow = 1 }))
+  end
+  local message, color = detail_message()
+  if message == nil and not drawable then
+    message, color = noctalia.tr("history.no_data"), "on_surface_variant"
+  end
+  if message ~= nil then
+    table.insert(body, ui.label({ text = message, color = color, fontSize = 12, maxLines = 2 }))
+  end
+  if history_snapshot ~= nil and (tonumber(history_snapshot.updated_at) or 0) > 0 then
+    table.insert(body, ui.label({
+      text = noctalia.tr("history.updated", { time = local_time(history_snapshot.updated_at, "%m-%d %H:%M:%S %Z %z") }),
+      fontSize = 11, color = "on_surface_variant",
+    }))
+  end
+  if history_snapshot ~= nil and (history_snapshot.status == "error" or history_snapshot.status == "unavailable") then
+    table.insert(body, ui.button({
+      text = noctalia.tr("history.retry"), onClick = "onRefreshClicked", enabled = pending_since == nil,
+    }))
+  end
+end
+
+render = function()
   dark_mode = noctalia.isDarkMode()
 
   local rows = {}
-  for _, row in ipairs(watch) do
-    table.insert(rows, data_row(row))
+  if selected_id == nil then
+    for _, row in ipairs(watch) do table.insert(rows, data_row(row)) end
   end
+  local row = selected_row()
 
   local body = {
     ui.row({ align = "center", gap = 8, key = "header" }, {
       ui.glyph({ name = "chart-line", size = 18, color = "primary" }),
       ui.column({ flexGrow = 1, gap = 2 }, {
-        ui.label({ text = noctalia.tr("panel.title"), fontSize = 16, fontWeight = "bold", color = "on_surface" }),
+        ui.label({ text = row and name_for(row) or noctalia.tr("panel.title"), fontSize = 16, fontWeight = "bold", color = "on_surface", maxLines = 1 }),
         ui.label({
-          text = noctalia.tr("panel.refresh")
+          text = selected_id ~= nil and noctalia.tr("history.title") or (noctalia.tr("panel.refresh")
             .. ": "
             .. tostring(config ~= nil and config.refresh_interval or 5)
             .. " "
-            .. noctalia.tr("settings.seconds"),
+            .. noctalia.tr("settings.seconds")),
           fontSize = 11,
           color = "on_surface_variant",
         }),
@@ -261,6 +453,13 @@ local function render()
     }),
   }
 
+  if selected_id ~= nil then
+    table.insert(body[1].children, 1, ui.button({
+      key = "history-back", glyph = "arrow-left", variant = "ghost",
+      tooltip = noctalia.tr("history.back"), onClick = "onBackClicked",
+    }))
+  end
+
   if show_close_button then
     table.insert(body[1].children, ui.button({
       key = "close",
@@ -271,14 +470,16 @@ local function render()
     }))
   end
 
-  local status = status_box()
-  if status ~= nil then
-    table.insert(body, status)
+  if selected_id ~= nil then
+    detail_body(body)
+  else
+    local status = status_box()
+    if status ~= nil then table.insert(body, status) end
   end
 
   -- The table is hidden while loading or while the plugin reports a problem, so the
   -- status box is the only thing on screen then (v4 toggled the same two blocks).
-  if busy ~= true and ((health == nil) or health.error == "") then
+  if selected_id == nil and busy ~= true and ((health == nil) or health.error == "") then
     -- The headings sit outside the scroll region: inside it they scroll away with the
     -- rows, leaving a column of unlabelled numbers once the list is longer than the
     -- panel. They are a DIRECT sibling of the scroll, which is what every official
@@ -296,13 +497,14 @@ local function render()
     key = "footer",
     text = noctalia.tr("panel.data_from")
       .. ": "
-      .. noctalia.tr("data_source." .. tostring(config ~= nil and config.source or "huobi")),
+      .. noctalia.tr("data_source." .. tostring(config ~= nil and config.source or "huobi"))
+      .. (selected_id ~= nil and (" · " .. noctalia.tr("market_type." .. tostring(config.market_type))) or ""),
     fontSize = 11,
     color = "on_surface_variant",
     textAlign = "center",
   }))
 
-  panel.render(ui.column({ flexGrow = 1, gap = 12 }, body))
+  panel.render(ui.column({ flexGrow = 1, gap = 12, align = "stretch" }, body))
   -- Commit only after the tree was handed over: a render the host's CPU budget aborts is
   -- then retried on the next tick instead of freezing the panel on stale content.
   rendered_signature = display_signature()
@@ -337,12 +539,78 @@ local function poll_state()
   dark_mode = noctalia.isDarkMode()
 end
 
+local function clear_detail()
+  selected_id, selected_source, selected_market, selected_proxy = nil, nil, nil, nil
+  selected_epoch = nil
+  history_snapshot, prepared, prepared_signature, hover_point = nil, nil, nil, nil
+  pointer_handlers = {}
+  next_history_at, pending_since, pending_revision = 0, nil, nil
+end
+
+local function poll_history()
+  local snapshot = noctalia.state.get("market.history:" .. selected_id)
+  if snapshot ~= nil and (snapshot.id ~= selected_id or snapshot.source ~= selected_source
+    or snapshot.market_type ~= selected_market or snapshot.epoch ~= config.history_epoch) then
+    snapshot = nil
+  end
+  history_snapshot = snapshot
+  if pending_since ~= nil and snapshot ~= nil and snapshot.status ~= "loading"
+    and tostring(snapshot.revision) ~= pending_revision then
+    pending_since, pending_revision = nil, nil
+  end
+  local signature = snapshot ~= nil and table.concat({
+    tostring(snapshot.epoch), tostring(snapshot.revision), tostring(snapshot.updated_at),
+  }, ":") or ""
+  if signature ~= prepared_signature then
+    prepared_signature = signature
+    prepared = snapshot ~= nil and history.prepare(snapshot.points or {}, snapshot.updated_at or noctalia.nowMs(), snapshot.interval_ms) or nil
+    pointer_handlers, hover_point = {}, nil
+  end
+end
+
+local function request_history()
+  if not opened or selected_id == nil then return end
+  local now = noctalia.nowMs()
+  -- Allow recovery if a host-aborted callback left a pending snapshot behind.
+  if pending_since ~= nil and now - pending_since < 60000 then return end
+  pending_since = now
+  pending_revision = tostring(history_snapshot and history_snapshot.revision)
+  next_history_at = now + HISTORY_REFRESH_MS
+  send({ op = "history_request", id = selected_id })
+end
+
+select_asset = function(id)
+  if not opened then return end
+  poll_state()
+  clear_detail()
+  selected_id = id
+  if selected_row() == nil or config == nil then clear_detail(); return end
+  selected_source, selected_market, selected_proxy = config.source, config.market_type, config.proxy_url
+  selected_epoch = config.history_epoch
+  poll_history()
+  request_history()
+  render()
+end
+
 panel.setWantsSecondTicks(true)
 
 -- ── Events ──────────────────────────────────────────────────────────────────
 
 function update()
+  if not opened then return end
   poll_state()
+  if selected_id ~= nil then
+    if config == nil or config.source ~= selected_source or config.market_type ~= selected_market or selected_row() == nil then
+      clear_detail()
+    else
+      if config.proxy_url ~= selected_proxy or config.history_epoch ~= selected_epoch then
+        selected_proxy, selected_epoch = config.proxy_url, config.history_epoch
+        pending_since, pending_revision, next_history_at = nil, nil, 0
+      end
+      poll_history()
+      if noctalia.nowMs() >= next_history_at then request_history() end
+    end
+  end
   if display_signature() == rendered_signature then
     return
   end
@@ -350,6 +618,12 @@ function update()
 end
 
 function onRefreshClicked()
+  if not opened then return end
+  if selected_id ~= nil then
+    request_history()
+    render()
+    return
+  end
   -- v4's refresh button refetched every watched instrument without forcing, so
   -- the per-instrument backoff still applied.
   send({ op = "refresh_all" })
@@ -360,10 +634,13 @@ function onSettingsClicked()
 end
 
 function onCloseClicked()
+  onClose()
   panel.close()
 end
 
 function onOpen(_context)
+  opened = true
+  clear_detail()
   -- Read on every open: it does not reload when the shell setting changes.
   -- Only an explicit false hides the button (the host's own convention).
   show_close_button = noctalia.getSetting("shell.show_close_buttons") ~= false
@@ -371,6 +648,23 @@ function onOpen(_context)
   -- the defaults and wait for a service publish that may be a whole refresh_interval away.
   poll_state()
   render()
+end
+
+function onClose()
+  opened = false
+  clear_detail()
+end
+
+function onBackClicked()
+  if not opened then return end
+  clear_detail()
+  render()
+end
+
+function onHistoryPointerLeave()
+  if hover_point == nil then return end
+  hover_point = nil
+  if opened and selected_id ~= nil then render() end
 end
 
 -- Switching between a light and a dark palette changes which rise/fall shades apply.

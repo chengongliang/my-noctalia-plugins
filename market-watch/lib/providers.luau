@@ -323,6 +323,94 @@ function Providers.parse_error(provider, response)
   return false
 end
 
+-- ── Intraday history ────────────────────────────────────────────────────────
+
+function Providers.history_url(provider, market_type, instrument)
+  if instrument == nil or type(instrument.exchange_symbol) ~= "string" or instrument.exchange_symbol == "" then
+    return ""
+  end
+  local symbol = url_encode(instrument.exchange_symbol)
+  if provider == "huobi" then
+    if market_type == "perpetual" then
+      return "https://api.hbdm.com/linear-swap-ex/market/history/kline?period=5min&size=300&contract_code=" .. symbol
+    end
+    return "https://api.huobi.pro/market/history/kline?period=5min&size=300&symbol=" .. symbol
+  elseif provider == "binance" then
+    local base = market_type == "perpetual" and "https://fapi.binance.com/fapi/v1/klines"
+      or "https://api.binance.com/api/v3/klines"
+    return base .. "?symbol=" .. symbol .. "&interval=5m&limit=300"
+  elseif provider == "okx" then
+    return "https://www.okx.com/api/v5/market/candles?instId=" .. symbol .. "&bar=5m&limit=300"
+  elseif provider == "coingecko" and market_type == "spot" then
+    -- Explicit interval=5m requires Enterprise; a current one-day query picks it automatically.
+    return "https://api.coingecko.com/api/v3/coins/" .. symbol .. "/market_chart?vs_currency=usd&days=1"
+  end
+  return ""
+end
+
+function Providers.parse_history(provider, response, _instrument)
+  if type(response) ~= "table" or Providers.parse_error(provider, response) then
+    return nil
+  end
+  local rows
+  if provider == "huobi" then
+    if response.status ~= "ok" then
+      return nil
+    end
+    rows = response.data
+  elseif provider == "okx" then
+    if to_string(response.code) ~= "0" then
+      return nil
+    end
+    rows = response.data
+  elseif provider == "binance" then
+    rows = response
+  elseif provider == "coingecko" then
+    rows = response.prices
+  else
+    return nil
+  end
+  if type(rows) ~= "table" or (rows[1] == nil and next(rows) ~= nil) then
+    return nil
+  end
+
+  local by_time = {}
+  for _, row in ipairs(rows) do
+    if type(row) == "table" then
+      local time = to_number(provider == "huobi" and row.id or row[1])
+      local price = to_number(provider == "huobi" and row.close or (provider == "coingecko" and row[2] or row[5]))
+      if time ~= nil and price ~= nil and time > 0 and price > 0 then
+        if provider == "huobi" then
+          time = time * 1000
+        end
+        local point = { timestamp_ms = time, price = price }
+        if provider == "okx" then
+          point.confirmed = to_string(row[9]) == "1"
+        end
+        by_time[time] = point
+      end
+    end
+  end
+  local points = {}
+  for _, point in pairs(by_time) do
+    table.insert(points, point)
+  end
+  table.sort(points, function(a, b)
+    return a.timestamp_ms < b.timestamp_ms
+  end)
+
+  local interval = 300000
+  if provider == "coingecko" and #points > 1 then
+    local deltas = {}
+    for index = 2, #points do
+      deltas[#deltas + 1] = points[index].timestamp_ms - points[index - 1].timestamp_ms
+    end
+    table.sort(deltas)
+    interval = deltas[math.ceil(#deltas / 2)]
+  end
+  return { points = points, interval_ms = interval, basis = provider == "coingecko" and "price" or "candle" }
+end
+
 -- ── Quotes ──────────────────────────────────────────────────────────────────
 -- One 1-day candle per request: open is the 24h reference the change is computed
 -- against, so a single call per instrument covers price, change and high/low.

@@ -12,6 +12,7 @@ Shell, not a package built by this repository.
 | [QML Components](./qml-components.md) | Bar, panel, settings, launcher, and widget contracts |
 | [State And I/O](./state-and-io.md) | Settings fallback, `Process`, `FileView`, async work, and logging |
 | [Provider Contracts](./provider-contracts.md) | Market Watch instruments, quotes, catalogs, and logos |
+| [Intraday History (v5)](./intraday-history.md) | Historical adapters, detail lifecycle, graph API29, timestamps and failure handling |
 | [Alert Contracts](./alerts.md) | Market Watch price boundaries, rapid moves, persistence, and notifications |
 | [Testing And Release](./testing-and-release.md) | Fixtures, shell checks, documentation, and registry synchronization |
 

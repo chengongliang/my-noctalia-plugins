@@ -5,9 +5,9 @@
 # bar asset, display mode, alert rules) lives in pluginDataDir()/market.json
 # because a plugin cannot write settings.
 #
-# plugin_api 26: argv-form runAsync (24) keeps the curl `-x` proxy path alive, and
-# getSetting (26) gates the panel close button on shell.show_close_buttons. Nothing
-# newer is used.
+# plugin_api 29: graph pointer callbacks provide intraday time/price readouts.
+# argv-form runAsync (24) preserves curl proxy support; getSetting (26) gates
+# the panel close button on shell.show_close_buttons.
 #
 # 2.0.1 - the bulk instrument catalogue was removed: a service callback may not
 # decode ~1.4 MB of JSON (Huobi spot) and subprocess stdout is truncated at 1 MiB,
@@ -20,8 +20,8 @@
 
 id = "chengongliang/market-watch"
 name = "Market Watch"
-version = "2.0.12"
-plugin_api = 26
+version = "2.1.0"
+plugin_api = 29
 author = "chengongliang"
 license = "MIT"
 icon = "chart-line"

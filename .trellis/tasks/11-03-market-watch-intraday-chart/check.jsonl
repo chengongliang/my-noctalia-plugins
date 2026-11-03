@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/11-03-market-watch-intraday-chart/prd.md","reason":"按AC1至AC8核对完整已确认范围，不自行扩大首版产品功能"}
+{"file":".trellis/tasks/11-03-market-watch-intraday-chart/design.md","reason":"审查真实时间/价格、曲线分段、状态隔离、预算保护和可见期间刷新"}
+{"file":".trellis/tasks/11-03-market-watch-intraday-chart/research/findings.md","reason":"官方v5API能力和提供商证据；OKX未验成功，不把过期v4指令作为标准"}
+{"file":".trellis/tasks/11-03-market-watch-intraday-chart/implement.md","reason":"验证命令、离线生命周期检查、运行验收与未执行检查的报告要求"}

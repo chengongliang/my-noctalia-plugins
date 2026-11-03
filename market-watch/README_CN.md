@@ -9,8 +9,8 @@ Market Watch 是一个 Noctalia 插件，可以在状态栏和详情面板中显
 | 项目 | 值 |
 | --- | --- |
 | 清单 id | `chengongliang/market-watch` |
-| 版本 | 2.0.9 |
-| 插件 API | 26 |
+| 版本 | 2.1.0 |
+| 插件 API | 29 |
 | 外部依赖 | `curl` |
 
 入口说明：
@@ -18,7 +18,7 @@ Market Watch 是一个 Noctalia 插件，可以在状态栏和详情面板中显
 - `service` — 无界面的数据引擎：标的解析、行情队列、提醒规则、图标缓存和运行时状态都由它
   管理，并通过插件的共享状态通道发布给其他入口。
 - `bar` — 状态栏小部件：单个资产、涨跌配色和箭头。
-- `watch` — 行情表格：每个自选资产的最新价、24 小时涨跌幅、最高价和最低价。
+- `watch` — 行情表格和分时详情：每个自选资产的最新价、24 小时涨跌幅、最高价、最低价，以及可点击查看的近期价格走势。
 - `settings` — 设置面板：自选列表、状态栏资产、显示模式、价格提醒、极速提醒以及配置导入导出。
 
 用命令行打开面板：
@@ -32,19 +32,19 @@ noctalia msg panel-toggle chengongliang/market-watch:settings
 `service` 同时响应插件 IPC，例如：
 
 ```sh
-noctalia msg plugin chengongliang/market-watch:service focused refresh-now
-noctalia msg plugin chengongliang/market-watch:service focused force-refresh
-noctalia msg plugin chengongliang/market-watch:service focused toggle-mode
-noctalia msg plugin chengongliang/market-watch:service focused toggle-panel
-noctalia msg plugin chengongliang/market-watch:service focused status
+noctalia msg plugin chengongliang/market-watch:service all refresh-now
+noctalia msg plugin chengongliang/market-watch:service all force-refresh
+noctalia msg plugin chengongliang/market-watch:service all toggle-mode
+noctalia msg plugin chengongliang/market-watch:service all toggle-panel
+noctalia msg plugin chengongliang/market-watch:service all status
 ```
 
 ## 依赖要求
 
-- `curl` — 所有网络请求都通过它完成：标的解析、每一条行情、图标搜索和图标下载。已在清单的
+- `curl` — 所有网络请求都通过它完成：标的解析、每一条行情、分时历史、图标搜索和图标下载。已在清单的
   `dependencies` 中声明。
 
-此外需要支持插件 API 26 的 Noctalia 版本；插件会写入若干文件（见下文“状态与文件”）。除
+此外需要支持插件 API 29 的 Noctalia 版本；插件会写入若干文件（见下文“状态与文件”）。除
 `curl` 之外没有其他外部程序依赖。
 
 ## 使用方法
@@ -100,6 +100,25 @@ v5 插件无法写入设置：
 应用其中的运行时配置。导入旧版本导出的配置前，请将文件重命名为 `market-watch-config.json`
 并放到 `~/Downloads/`。文件里的静态设置仅作参考，导入时插件会把这些键名提示出来，以便你在
 宿主设置窗口中修改。
+
+## 分时图
+
+点击行情表格中的资产整行，在同一个弹窗中查看最近 24 小时的价格折线。数据源支持时，优先采用约五分钟一个采样点。鼠标移到曲线上，可在图表上方读取该点的时间和价格；时间跟随系统本地时区，并显示时区标识。返回按钮回到行情列表，关闭弹窗后重新打开也从列表开始。
+
+进入详情时加载历史，停留期间每 30 秒自动刷新，也可以手动刷新。返回列表或关闭弹窗后不再发起图表请求，已运行的请求可以完成。刷新失败时保留上次成功的曲线和更新时间，首次加载失败则提供重试。历史只保存在内存，与普通报价和提醒样本分开，不改变报价刷新、提醒判断或持久化设置。
+
+历史请求沿用所选数据源、现货/合约类型、准确标的 id 和已有代理，不替换为其他市场的同名资产。本功能新增的网络请求如下：
+
+| 来源 | 历史请求 |
+| --- | --- |
+| Huobi 现货 | `api.huobi.pro/market/history/kline`，`period=5min`，300 条 |
+| Huobi 永续 | `api.hbdm.com/linear-swap-ex/market/history/kline`，`period=5min`，300 条 |
+| Binance 现货 | `api.binance.com/api/v3/klines`，`interval=5m`，300 条 |
+| Binance 永续 | `fapi.binance.com/fapi/v1/klines`，`interval=5m`，300 条 |
+| OKX | `www.okx.com/api/v5/market/candles`，`bar=5m`，300 条 |
+| CoinGecko | `api.coingecko.com/api/v3/coins/<id>/market_chart`，`vs_currency=usd`，`days=1` |
+
+交易所数据使用五分钟区间收盘价，时间标注区间起点，当前未结束区间的价格仍可能变化；CoinGecko 使用来源提供的实际时间和价格。详情显示实际采样精度及覆盖范围，新上市资产或历史缺失时可能不足 24 小时，缺口不会用虚构价格补齐。没有可用历史的资产会显示明确状态。公共接口的可用性及限流由各数据源决定。
 
 ## 数据源
 
@@ -187,6 +206,9 @@ SVG，若宿主无法解码则仍回退到文字标记。
 ```sh
 lua5.4 tests/alerts_test.luau
 lua5.4 tests/providers_test.luau
+lua5.4 tests/history_test.luau
+lua5.4 tests/history_service_test.luau
+lua5.4 tests/history_panel_test.luau
 ```
 
 两套测试沿用 v4 的断言，并读取 `tests/fixtures/` 中未修改的固定数据，覆盖四个提供商的行情报文、
@@ -195,6 +217,9 @@ TradingView 搜索与图标回退、价格格式化、穿越与冷却逻辑以�
 
 service 同样写在 Lua 5.4 兼容的子集里，因此可以用模拟宿主在离线状态下配合同一批固定数据执行，
 行情队列、防抖、退避与大小保护就是这样在没有真实 shell 的情况下验证的。
+
+新增的历史测试使用固定接口样本，验证真实时间轴、价格归一化及缺口分段；service 和 panel
+测试用可控时钟执行实际入口，覆盖失败保留、请求去重、过期回调、代理切换、悬停精度、30 秒周期及返回/关闭后停止请求。
 
 ```sh
 noctalia plugins lint .

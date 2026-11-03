@@ -1,0 +1,95 @@
+# Market Watch Intraday History (Noctalia v5)
+
+## 1. Scope / Trigger
+
+Use this contract when changing historical prices, the clickable watch panel,
+history request lifecycle, or graph readouts. This is Luau/v5 guidance; QML and
+manifest.json examples elsewhere in this layer describe the older implementation.
+
+## 2. Signatures
+
+```lua
+Providers.history_url(provider, market_type, instrument) -- string URL or ""
+Providers.parse_history(provider, response, instrument) -- history record or nil
+History.prepare(points, now_ms, interval_ms)            -- chart data
+History.point_at(segment, norm_x)                       -- point, index or nil
+```
+
+The panel requests data with `market.cmd = { op = "history_request", id, nonce }`.
+The service publishes each asset to `market.history:<full instrument id>` and
+includes `history_epoch` in `market.config`.
+
+## 3. Contracts
+
+- Adapter history: `{ points = { { timestamp_ms, price } }, interval_ms, basis }`.
+  `basis` is `candle` or `price`. Exchange candle timestamps mark interval starts;
+  the close of the current interval can change. CoinGecko retains its actual times.
+- State includes `id`, `source`, `market_type`, `epoch`, `revision`, `status`,
+  `points`, `interval_ms`, `basis`, `first_at`, `last_at`, `updated_at`, `error_code`.
+  `updated_at = 0` means there has been no successful load; never format it as a date.
+- Identity is provider/market/exact exchange symbol. The service validates requests
+  against the current watch list; the panel does not reconstruct provider URLs.
+- Only a visible selected detail schedules a request, on entry and every 30 seconds.
+  The service has no historical polling timer. Close/back stop new requests;
+  already running curl can finish without reopening the detail.
+- Deduplicate per id/epoch. Clear history on provider, market, or proxy changes;
+  prune removed assets. Obsolete callbacks may not publish or release a newer slot.
+- Reuse argv-form curl and the configured proxy. Check truncation, body length,
+  exit status and decoded type before parsing. Stay within 100 KiB per JSON decode.
+- The cache is in memory, separate from quote/alert state and persisted configuration.
+- Graph pointer callbacks require API 29. `ui.graph` takes normalized numeric values,
+  not timestamp x-values; axes/readout labels are separate UI nodes. Do not invent
+  tooltip/crosshair props or use newer props without changing the API requirement.
+- Use real sample times for hover and local-zone display. Split long missing
+  intervals, retain proportional time spacing and one common vertical price scale.
+  A constant-price line is centered; empty/single-point data does not pretend to
+  be a complete day's line. Keep full price precision in hover readouts.
+- Use a named graph leave callback: removal teardown cannot call a superseded
+  closure. Convert normalized pointer arguments from strings and clamp them.
+
+## 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+| --- | --- |
+| First request pending | Loading, no successful-update date |
+| First request fails | Error and retry; no invented curve |
+| Refresh fails with good points | Stale curve and original successful time |
+| Upstream empty/invalid/truncated/oversized response | Reject, preserve good history |
+| No usable history or fewer than two points | Clear empty/insufficient state |
+| Duplicate requests or rapid manual refresh | No duplicate in-flight process per id |
+| Old epoch or superseded token callback | No publication or clearing newer request |
+| Close/back then time advances | No new history request |
+| NaN/infinite/nonpositive price, future/out-of-window time | Exclude from chart |
+| Provider/market switch or asset removed | Exit old detail, invalidate old state |
+
+## 5. Good / Base / Bad Cases
+
+- Good: OKX explicitly requests 300 five-minute candles; its default 100 cannot cover
+  a full day. Failed network access remains an error, not a fabricated dataset.
+- Base: current CoinGecko `days=1` omits `interval`; show the source's actual cadence
+  and coverage, even when shorter than 24 hours.
+- Bad: explicitly requesting CoinGecko `interval=5m` as if universally free, using
+  rapid-alert samples as daily history, or feeding downloaded history into alerts.
+
+## 6. Tests Required
+
+Run history pure tests plus real service/panel mocked-host lifecycle tests and the
+existing provider/alert tests under Lua 5.4. Assert timestamps/IDs, all provider
+market variants, cleanup/token isolation, request counts across 30 seconds and
+close/back, full-precision hover, gaps/constant prices, stale preservation and
+first-load dates. Run `noctalia plugins lint .` and the official plugin validator;
+regenerate committed `catalog.toml` when the version or minimum API changes.
+Report GUI/light-dark/network checks separately from mocked tests.
+
+## 7. Wrong vs Correct
+
+```lua
+-- Wrong: assumes every source has exactly five-minute timestamps.
+local sample_time = window_start + index * 300000
+
+-- Correct: hover reads the point actually represented by the graph segment.
+local point = history.point_at(segment, norm_x)
+if point ~= nil then
+  local text = noctalia.formatTime("%m-%d %H:%M %Z", point.timestamp_ms / 1000)
+end
+```
