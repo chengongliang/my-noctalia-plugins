@@ -174,3 +174,40 @@ Merged main alert notifications into the multi-currency scrolling branch, resolv
 ### Next Steps
 
 - 解锁后完成原生布局、明暗主题和悬停交互验收；在可用网络验证OKX成功路径。
+
+
+## Session 6: Market Watch chart modes and stable hover
+<!-- trellis-session: v=2 fp=60c9691e5497d94c -->
+
+**Date**: 2026-11-04
+**Task**: Market Watch chart modes and stable hover
+**Branch**: `feat/market-watch-intraday-chart`
+
+### Summary
+
+Added persistent line/candlestick selection with validated OHLC, full-width charts and x-based line readouts; fixed hover layout shifts with fixed font metrics and removed changing readout prefixes. Reviewed host-owned panel settings without modifying Noctalia. User approved merging all work into main and pushing.
+
+### Main Changes
+
+- Added chart setting persistence/import/export and native candle rendering; released Market Watch 2.2.0 at API 29.
+- Kept hover readouts prefix-free with stable font height, tests and spec contracts.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ace2d17` | feat(market-watch): add chart modes and stabilize hover readouts |
+| `6505188` | chore: update plugin catalog [skip ci] |
+
+### Testing
+
+- [OK] All six Lua 5.4 suites passed; plugin lint reported 0 errors/0 warnings; both manifests passed official validation; full-scope independent review passed.
+- [OK] Actual GUI/light-dark interaction and online endpoints were not re-tested; installed plugin unchanged.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Merge into main and push origin/main as requested.
