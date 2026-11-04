@@ -60,8 +60,8 @@ _KNOWN_PLATFORMS = {
 }
 
 # Every name below records how it was checked. Do NOT add a name by analogy
-# with a neighbour: a 2026-08-05 audit of all 21 platforms found 12 of the 21
-# declared names had never existed anywhere — they were pattern-guessed from a
+# with a neighbour: a 2026-08-05 audit of the then-current 21 platforms found
+# 12 declared names had never existed anywhere — they were pattern-guessed from
 # `<PLATFORM>_SESSION_ID` shape no vendor agreed to, and the uniformity was the
 # only "evidence" behind them. A platform with no verified name belongs in no
 # table; it resolves through TRELLIS_CONTEXT_ID or its hook/plugin bridge.
@@ -523,6 +523,28 @@ def resolve_context_key(
     scripts and subprocesses. It does not store the task itself.
     """
     if allow_environment_context:
+        # The optional dsh-trellis plugin contributes this managed DSH_* value
+        # per shell execution from the current DSH session header. DSH scrubs
+        # ambient DSH_* values before rebuilding that namespace, so this value
+        # cannot be inherited from an outer Claude/Codex Trellis session. It
+        # must outrank the generic override below, which ordinary child
+        # processes inherit indiscriminately.
+        dsh_override = _string_value(os.environ.get("DSH_TRELLIS_CONTEXT_ID"))
+        if dsh_override:
+            return _sanitize_key(dsh_override) or _hash_value(dsh_override)
+
+        # A real DSH managed shell rebuilds the complete DSH_* namespace: the
+        # paired sentinel and session id cannot be inherited from an outer
+        # Trellis host. Prefer that canonical env-table identity over
+        # a generic override that ordinary process inheritance may carry in.
+        if (
+            _string_value(os.environ.get("DSH_SHELL")) == "1"
+            and _string_value(os.environ.get("DSH_SESSION_ID"))
+        ):
+            dsh_context_key = _lookup_env_context_key("dsh")
+            if dsh_context_key:
+                return dsh_context_key
+
         override = _string_value(os.environ.get("TRELLIS_CONTEXT_ID"))
         if override:
             return _sanitize_key(override) or _hash_value(override)
@@ -648,17 +670,15 @@ def resolve_active_task(
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
     *,
-    allow_single_session_fallback: bool = True,
+    allow_single_session_fallback: bool = False,
     allow_environment_context: bool = True,
 ) -> ActiveTask:
     """Resolve the active task from session runtime state only.
 
     A stale session task is returned as stale. Missing context identity or a
-    missing/empty session context falls back to single-session inference: if
-    exactly one session file exists in the runtime, return its task with
-    source_type="session-fallback" — covers pull-based platform sub-agents
-    (copilot, gemini, qoder) that don't inherit the parent's session id. ≥2
-    files or 0 files yield ActiveTask(None) — refuses to guess across windows.
+    Missing or unmatched session identity does not infer ownership from the
+    number of session files. Pull-based child-agent callers that cannot inherit
+    a parent identity must opt into the compatibility fallback explicitly.
     """
     context_key = resolve_context_key(
         platform_input,

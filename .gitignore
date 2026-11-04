@@ -7,3 +7,6 @@ __pycache__/
 .DS_Store
 *.swp
 *~
+
+# Local progress-dashboard run logs (paseo-progress), not shared state.
+progress-history/

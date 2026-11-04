@@ -225,11 +225,12 @@ def truncate_utf8(data: bytes, cap: int) -> bytes:
             seq_len = 4
         else:
             seq_len = 1
-        # Drop the lead byte too if its full sequence didn't fit.
+        # Cut before the lead byte when its full sequence didn't fit;
+        # otherwise the trailing sequence is complete — keep it whole.
         if (i - 1) + seq_len > len(truncated):
-            i -= 1
+            return truncated[: i - 1]
 
-    return truncated[:i]
+    return truncated
 
 
 class _Budget:
@@ -1122,7 +1123,11 @@ def main():
         sys.exit(0)
 
     # Get current task directory (research doesn't require it)
-    task_dir = get_current_task(repo_root, input_data)
+    task_dir = get_current_task(
+        repo_root,
+        input_data,
+        allow_single_session_fallback=True,
+    )
 
     # implement/check need task directory
     if subagent_type in AGENTS_REQUIRE_TASK:
