@@ -98,22 +98,26 @@
     "carousel_prev": "上一个资产",
     "carousel_next": "下一个资产",
     "carousel_now": "当前显示",
-    "carousel_follow_hint": "每一行开头的关注开关决定轮播范围；若一个都不关注，则轮播整个自选列表。"
+    "carousel_follow_hint": "每一行开头的关注开关决定轮播范围；若一个都不关注，则轮播整个自选列表。",
+    "chart": "图表",
+    "chart_type": "图表类型"
   },
   "history": {
     "title": "最近 24 小时 · 每 30 秒刷新",
     "back": "返回资产列表",
     "sample": "{time} · {price} {currency}",
-    "latest_sample": "最新采样：{time} · {price} {currency}",
     "interval": "采样间隔：约 {minutes} 分钟",
-    "coverage": "实际覆盖：{first} – {last}",
-    "gaps": "缺失时段留空显示",
-    "candle_basis": "五分钟区间收盘价，时间为区间起点；最后一个区间的价格可能继续变化。",
-    "price_basis": "数据源的实际价格采样；悬停可查看记录的时间和价格。",
-    "updated": "上次成功更新：{time}",
     "update_failed": "更新失败，保留上次成功取得的曲线。",
     "load_failed": "无法加载价格历史，请重试。",
     "no_data": "连续价格历史不足，暂时无法绘制曲线。",
-    "retry": "重试"
+    "retry": "重试",
+    "high": "最高 {price}",
+    "low": "最低 {price}",
+    "ohlc": "开 {open}   高 {high}   低 {low}   收 {close}",
+    "line_fallback": "此来源无蜡烛数据，显示曲线"
+  },
+  "chart": {
+    "line": "曲线",
+    "candle": "蜡烛图"
   }
 }

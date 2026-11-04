@@ -11,7 +11,7 @@ price alerts and a rapid rise/fall detector can notify you when something moves.
 | Field | Value |
 | --- | --- |
 | Manifest id | `chengongliang/market-watch` |
-| Version | 2.1.0 |
+| Version | 2.2.0 |
 | Plugin API | 29 |
 | Dependency | `curl` |
 
@@ -96,17 +96,24 @@ and the IPC events listed under Plugin.
 
 Click an asset row in the market table to open its detail in the same panel. The
 chart covers the recent 24-hour window, using approximately five-minute samples
-when the source provides them. Move the pointer over a line to read that sample's
-time and price above the chart. Times follow the system timezone, shown beside the
+when the source provides them. Move the pointer over a line to read its price at that horizontal position
+above the chart; vertical pointer movement does not change the price. Times follow the system timezone, shown beside the
 readout. The back button returns to the table; closing and reopening the panel
 starts at the table again.
 
 The detail requests history on entry, refreshes every 30 seconds while visible,
 and has a manual refresh button. Returning to the table or closing the panel stops
 new chart requests; an already running request can finish. A refresh failure keeps
-the last good curve and its successful update time, while a first-load failure has
+the last good chart, while a first-load failure has
 a retry button. History stays in memory, separate from quotes and alert samples;
-it does not change quote polling or alert evaluation and adds no persisted setting.
+it does not change quote polling or alert evaluation.
+
+In the plugin settings panel, choose **Chart → Chart type → Line / Candlestick**.
+Line is the default. The choice is saved with runtime settings and included in
+configuration export/import. Candlesticks use the exchange's real open/high/low/close
+values, with wicks and the configured rise/fall colors; hovering a candle shows its
+OHLC values. CoinGecko's price-only history falls back to a line. High/low labels sit
+above the full-width plot; coverage, basis and update-time rows are omitted.
 
 History uses the selected provider, market and exact instrument, with the same
 configured proxy as quotes. It never substitutes another venue's price. The
@@ -123,7 +130,7 @@ additional requests are:
 
 Exchange samples are five-minute candle close values labelled by the interval's
 start; the current candle can still change. CoinGecko supplies timestamped prices
-at its available cadence. The detail shows actual coverage and sampling precision;
+at its available cadence. The line detail shows the source sampling precision;
 new listings and missing history may cover less than 24 hours, and gaps are not
 filled with invented prices. Assets without usable history show an explicit empty
 or error state. Public endpoint availability and rate limits depend on the source.
@@ -266,6 +273,7 @@ lua5.4 tests/providers_test.luau
 lua5.4 tests/history_test.luau
 lua5.4 tests/history_service_test.luau
 lua5.4 tests/history_panel_test.luau
+lua5.4 tests/chart_settings_test.luau
 ```
 
 Both suites drive the same assertions as the v4 tests against the unchanged files in

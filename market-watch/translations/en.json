@@ -98,22 +98,26 @@
     "carousel_prev": "Previous asset",
     "carousel_next": "Next asset",
     "carousel_now": "On the bar now",
-    "carousel_follow_hint": "The follow toggle at the start of each watch-list row picks the rotation; with none followed, the whole watch list rotates."
+    "carousel_follow_hint": "The follow toggle at the start of each watch-list row picks the rotation; with none followed, the whole watch list rotates.",
+    "chart": "Chart",
+    "chart_type": "Chart type"
   },
   "history": {
     "title": "Last 24 hours · refresh every 30 s",
     "back": "Back to assets",
     "sample": "{time} · {price} {currency}",
-    "latest_sample": "Latest sample: {time} · {price} {currency}",
     "interval": "Sampling: about {minutes} min",
-    "coverage": "Available: {first} – {last}",
-    "gaps": "Missing intervals are left blank",
-    "candle_basis": "5-minute candle close; time marks the interval start. The latest interval may still change.",
-    "price_basis": "Source price samples; hover to read the recorded time and price.",
-    "updated": "Last updated: {time}",
     "update_failed": "Update failed; showing the last successful history.",
     "load_failed": "Could not load price history. Try again.",
     "no_data": "Not enough continuous price history to draw a chart.",
-    "retry": "Retry"
+    "retry": "Retry",
+    "high": "High {price}",
+    "low": "Low {price}",
+    "ohlc": "O {open}   H {high}   L {low}   C {close}",
+    "line_fallback": "No OHLC from this source; showing line"
+  },
+  "chart": {
+    "line": "Line",
+    "candle": "Candlestick"
   }
 }

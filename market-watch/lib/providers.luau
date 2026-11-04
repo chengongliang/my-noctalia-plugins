@@ -384,6 +384,15 @@ function Providers.parse_history(provider, response, _instrument)
           time = time * 1000
         end
         local point = { timestamp_ms = time, price = price }
+        if provider ~= "coingecko" then
+          local open = to_number(provider == "huobi" and row.open or row[2])
+          local high = to_number(provider == "huobi" and row.high or row[3])
+          local low = to_number(provider == "huobi" and row.low or row[4])
+          if open ~= nil and high ~= nil and low ~= nil and low > 0
+            and low <= math.min(open, price) and high >= math.max(open, price) then
+            point.open, point.high, point.low, point.close = open, high, low, price
+          end
+        end
         if provider == "okx" then
           point.confirmed = to_string(row[9]) == "1"
         end

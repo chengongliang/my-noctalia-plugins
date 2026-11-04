@@ -80,4 +80,27 @@ check(gapped.has_gaps and #gapped.segments == 2, "long missing time stays discon
 check(gapped.segments[2].start_at == now - 300000 and gapped.segments[2].values[1] == 2 / 3, "segments retain actual time and common scale")
 local odd = providers.parse_history("coingecko", { prices = { { now - 7200000, 1 }, { now - 3600000, 2 }, { now, 3 } } })
 check(odd.interval_ms == 3600000, "actual source hourly granularity retained")
+for _, source in ipairs({ "huobi", "binance", "okx" }) do
+  local parsed = providers.parse_history(source, fixtures[source])
+  local p = parsed.points[1]
+  check(p.open == 99 and p.high == 102 and p.low == 98 and p.close == 100, source .. " preserves actual OHLC")
+  local candles = history.prepare(parsed.points, now, parsed.interval_ms, "candle")
+  check(candles.chart_type == "candle" and candles.low == 98 and candles.high == 104, source .. " wicks define scale")
+  check(history.prepare(parsed.points, now).low == 100, source .. " line keeps close-only scale")
+end
+local invalid = providers.parse_history("huobi", { status = "ok", data = {
+  { id = now / 1000 - 300, open = 10, high = 9, low = 1, close = 5 },
+  { id = now / 1000, open = math.huge, high = 9, low = 1, close = 5 },
+} })
+check(#invalid.points == 2 and invalid.points[1].open == nil and invalid.points[2].open == nil,
+  "invalid OHLC cannot become candles; valid prices remain usable")
+check(history.prepare(invalid.points, now, 300000, "candle").chart_type == "line", "bad OHLC falls back to line")
+check(history.prepare(odd.points, now, odd.interval_ms, "candle").chart_type == "line", "price-only source falls back to line")
+local interpolated = history.price_at(prepared.segments[1], "0.25")
+check(interpolated.price == 105.15625 and interpolated.timestamp_ms == now - 750000, "line readout follows host Hermite interpolation along x")
+local values = history.graph_values(prepared.segments[1])
+check(#values == 5 and values[1] == 0 and values[2] == 0 and values[3] == 0 and values[5] == 0.5,
+  "two prefix samples align the host graph x domain with real points")
+check(history.price_at(prepared.segments[1], "1").price == 105, "line right edge")
+check(history.price_at(prepared.segments[1], "nan") == nil, "invalid line x rejected")
 print("History tests passed: " .. tostring(checks))

@@ -3,7 +3,7 @@
 --
 -- The manifest settings are READ-ONLY (noctalia.getConfig has no setter), so every
 -- value the user can change from the settings panel lives here instead: the watch
--- list, the bar asset, the display mode and both alert rules. They are stored as
+-- list, the bar asset, the display and chart modes, and both alert rules. They are stored as
 -- JSON under noctalia.pluginDataDir()/market.json, which survives plugin updates.
 --
 -- This module owns three things:
@@ -41,6 +41,7 @@ Store.CAROUSEL_MIN_SECONDS = 2
 Store.CAROUSEL_MAX_SECONDS = 60
 Store.VALID_MARKET_TYPES = { "spot", "perpetual" }
 Store.VALID_DISPLAY_MODES = { "text", "compact" }
+Store.VALID_CHART_TYPES = { "line", "candle" }
 
 -- v4 accepted "zh" as an alias; only the legacy config file can still carry it.
 local LEGACY_LANGUAGE_ALIASES = { en = "en", ["zh-CN"] = "zh-CN", zh = "zh-CN" }
@@ -369,6 +370,7 @@ function Store.default_runtime(seed)
     watch_list = watch_list,
     bar_coin = watch_list[1],
     display_mode = "text",
+    chart_type = "line",
     -- Off by default: nothing about the bar changes until the user opts in.
     carousel_enabled = false,
     carousel_interval = Store.CAROUSEL_DEFAULT_SECONDS,
@@ -442,6 +444,7 @@ function Store.apply_persisted(runtime, persisted)
     watch_list = runtime.watch_list,
     bar_coin = runtime.bar_coin,
     display_mode = runtime.display_mode,
+    chart_type = runtime.chart_type,
     carousel_enabled = runtime.carousel_enabled,
     carousel_interval = runtime.carousel_interval,
     carousel_ids = runtime.carousel_ids,
@@ -465,6 +468,10 @@ function Store.apply_persisted(runtime, persisted)
     if reference ~= "" then
       next_runtime.bar_coin = reference
     end
+  end
+
+  if includes(Store.VALID_CHART_TYPES, persisted.chart_type) then
+    next_runtime.chart_type = persisted.chart_type
   end
 
   local raw_display_mode = persisted.display_mode ~= nil and persisted.display_mode or persisted.displayMode
@@ -577,6 +584,7 @@ function Store.export_config(runtime, static)
     watch_list = runtime.watch_list,
     bar_coin = runtime.bar_coin,
     display_mode = runtime.display_mode,
+    chart_type = runtime.chart_type,
     carousel_enabled = runtime.carousel_enabled,
     carousel_interval = runtime.carousel_interval,
     carousel_ids = runtime.carousel_ids,
@@ -621,6 +629,7 @@ function Store.parse_imported(text)
     watch_list = nil,
     bar_coin = nil,
     display_mode = nil,
+    chart_type = nil,
     carousel_enabled = nil,
     carousel_interval = nil,
     carousel_ids = nil,
@@ -641,6 +650,10 @@ function Store.parse_imported(text)
   local raw_bar_coin = decoded.bar_coin ~= nil and decoded.bar_coin or decoded.barCoin
   if type(raw_bar_coin) == "string" and trim(raw_bar_coin) ~= "" then
     payload.bar_coin = Store.normalize_reference(raw_bar_coin)
+  end
+
+  if includes(Store.VALID_CHART_TYPES, decoded.chart_type) then
+    payload.chart_type = decoded.chart_type
   end
 
   local raw_display_mode = decoded.display_mode ~= nil and decoded.display_mode or decoded.displayMode
@@ -730,6 +743,7 @@ function Store.apply_imported(runtime, payload)
     watch_list = payload.watch_list or runtime.watch_list,
     bar_coin = payload.bar_coin or runtime.bar_coin,
     display_mode = payload.display_mode or runtime.display_mode,
+    chart_type = includes(Store.VALID_CHART_TYPES, payload.chart_type) and payload.chart_type or runtime.chart_type,
     carousel_enabled = carousel_enabled,
     carousel_interval = payload.carousel_interval or runtime.carousel_interval,
     carousel_ids = payload.carousel_ids or runtime.carousel_ids,

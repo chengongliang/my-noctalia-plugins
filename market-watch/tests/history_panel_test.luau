@@ -15,10 +15,12 @@ local dark, show_close, closed = true, true, false
 local format_calls = {}
 local labels = {
   ["history.sample"] = "{time} · {price} {currency}",
-  ["history.latest_sample"] = "Latest sample: {time} · {price} {currency}",
   ["history.interval"] = "Sampling: {minutes} min",
   ["history.coverage"] = "Available: {first} – {last}",
   ["history.updated"] = "Last updated: {time}",
+  ["history.high"] = "High {price}",
+  ["history.low"] = "Low {price}",
+  ["history.ohlc"] = "O {open} H {high} L {low} C {close}",
 }
 local env = setmetatable({}, { __index = _G })
 env.require = function(path) return dofile(path) end
@@ -71,6 +73,12 @@ local function invoke(callback, ...)
   return callback(...)
 end
 local function click(name) invoke(assert(key(name), name).props.onClick) end
+local function assert_readout(timestamp_ms, price)
+  local props = key("history-readout").props
+  assert(props.text == tostring(math.floor(timestamp_ms / 1000)) .. " CST +0800 · " .. price .. " USDT",
+    "latest and hovered readouts must use the same prefix-free format with the correct time and price")
+  assert(props.baseline == "textFixedHeight", "readouts must retain a font-metric height")
+end
 local function snapshot(id, status, revision, options)
   local value = {
     id = id, source = "huobi", market_type = "spot", epoch = state["market.config"].history_epoch,
@@ -105,7 +113,8 @@ env.update()
 assert(not text("Last updated:"), "initial loading has no successful update time")
 snapshot(btc, "ready", 2)
 env.update()
-assert(text("Latest sample:") and text("CST +0800") and text("5 min"))
+assert_readout(now, "105")
+assert(text("CST +0800") and text("5 min"))
 assert(key("history-" .. btc .. "-1") ~= nil)
 local graph = key("history-" .. btc .. "-1")
 local stable_move = graph.props.onPointerMove
@@ -117,8 +126,15 @@ invoke(stable_move, "0.0000", "0.4000")
 assert(renders == quiet_renders, "movement inside one sample must not redraw")
 invoke(stable_move, "1.0000", "0.5000")
 assert(text("105"))
+invoke(stable_move, "0.2500", "0.0000")
+assert(text("105.28125"), "price must follow the curve at x")
+quiet_renders = renders
+invoke(stable_move, "0.2500", "1.0000")
+assert(renders == quiet_renders and text("105.28125"), "changing pointer y cannot change the price")
+assert(not text("history.coverage") and not text("history.candle_basis") and not text("Last updated:"),
+  "the three bottom information rows must be removed")
 invoke(graph.props.onPointerLeave)
-assert(text("Latest sample:"))
+assert_readout(now, "105")
 quiet_renders = renders
 env.update()
 assert(renders == quiet_renders)
@@ -132,7 +148,7 @@ assert(#commands == 2 and commands[2].op == "history_request")
 local last_good = state["market.history:" .. btc]
 snapshot(btc, "stale", 3, { updated_at = last_good.updated_at, points = last_good.points, error_code = "network-error" })
 env.update()
-assert(key("history-" .. btc .. "-1") and text("history.update_failed") and text("Last updated:"))
+assert(key("history-" .. btc .. "-1") and text("history.update_failed") and not text("Last updated:"))
 env.onRefreshClicked()
 assert(#commands == 3)
 
@@ -205,7 +221,7 @@ snapshot(btc, "ready", 6, { points = {
   { timestamp_ms = now, price = 108 },
 } })
 env.update()
-assert(key("history-" .. btc .. "-1") and key("history-" .. btc .. "-2") and text("history.gaps"))
+assert(key("history-" .. btc .. "-1") and key("history-" .. btc .. "-2"))
 quiet_renders = renders
 state["market.quotes"] = { [btc] = { close = 99999.123456 } }
 env.update()
@@ -220,14 +236,63 @@ invoke(graph.props.onPointerMove, "0", "0")
 assert(text("59999.123456"), "hover prices must keep source decimal precision")
 invoke(graph.props.onPointerMove, "1", "0")
 assert(text("1.234567e-09"), "small source prices must not round to zero")
+invoke(graph.props.onPointerLeave)
+assert_readout(now, "1.234567e-09")
+for _ = 1, 3 do
+  invoke(graph.props.onPointerMove, "0", "0")
+  assert_readout(now - 300000, "59999.123456")
+  invoke(graph.props.onPointerLeave)
+  assert_readout(now, "1.234567e-09")
+end
 snapshot(btc, "ready", 8, { points = {
   { timestamp_ms = now - 300000, price = 1000.1 },
   { timestamp_ms = now, price = 1000.9 },
 } })
 env.update()
-local axis = key("history-plot").children[1].children
-assert(axis[1].props.text == "1000.9" and axis[2].props.text == "1000.1",
+local axis = key("history-bounds").children
+assert(axis[1].props.text == "High 1000.9" and axis[2].props.text == "Low 1000.1",
   "non-flat chart bounds must retain their source precision")
+assert(key("history-plot").props.gap == 0 and key("history-plot").children[1].type ~= "column",
+  "plot has no reserved left-axis column")
+local candles = {}
+for index = 1, 288 do
+  candles[index] = { timestamp_ms = now - (289 - index) * 300000, price = 101,
+    open = 100, high = 105, low = 95, close = 101 }
+end
+snapshot(btc, "ready", 9, { points = candles })
+env.update()
+local before_mode = #commands
+state["market.config"].chart_type = "candle"
+env.update()
+assert(#commands == before_mode, "switching chart type reuses the loaded history")
+assert(key("history-candle-" .. btc .. "-1") and key("history-candle-" .. btc .. "-288"), "full day of real candles renders")
+assert(text("High 105") and text("Low 95") and text("O 100 H 105 L 95 C 101"), "candles expose full OHLC and wick bounds")
+local function check_tree(node)
+  assert(#node.children <= 256, "UI nodes must respect the host child limit")
+  for _, child in ipairs(node.children) do check_tree(child) end
+end
+check_tree(tree)
+local cell = key("history-candle-" .. btc .. "-1")
+assert_readout(candles[#candles].timestamp_ms, "101")
+for _ = 1, 3 do
+  invoke(cell.props.onHover, "true", cell.props.key)
+  assert_readout(candles[1].timestamp_ms, "101")
+  invoke(cell.props.onHover, "false", cell.props.key)
+  assert_readout(candles[#candles].timestamp_ms, "101")
+end
+assert(text("O 100 H 105 L 95 C 101").props.baseline == "textFixedHeight",
+  "changing OHLC values must retain a font-metric height")
+local normal_color = cell.children[2].props.fill
+state["market.config"].red_rises = true
+env.update()
+assert(key("history-candle-" .. btc .. "-1").children[2].props.fill ~= normal_color, "candles honor rise/fall palette settings")
+for index, candle in ipairs(candles) do candle.timestamp_ms = now - (289 - index) * 600000 end
+snapshot(btc, "ready", 10, { points = candles })
+env.update()
+check_tree(tree)
+snapshot(btc, "ready", 11)
+env.update()
+assert(key("history-" .. btc .. "-1") and text("history.line_fallback"), "price-only data must not invent candles")
 local before_reload = #commands
 state["market.config"].history_epoch = state["market.config"].history_epoch + 1
 env.update()

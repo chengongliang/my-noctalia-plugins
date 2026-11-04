@@ -6,7 +6,7 @@
 -- back as a setting. Everything runtime-mutable therefore moves into this panel and
 -- is persisted by the service in pluginDataDir()/market.json:
 --
---   watch list, bar_coin, display_mode, price_alerts, rapid_alert, carousel
+--   watch list, bar_coin, display_mode, chart_type, price_alerts, rapid_alert, carousel
 --
 -- The read-only settings (data source, market type, proxy, refresh interval, colour
 -- scheme) stay in the host settings window; this panel names them so the user knows
@@ -304,6 +304,24 @@ local function bar_section()
   })
 end
 
+local function chart_section()
+  return ui.column({ gap = 2 }, {
+    ui.label({ text = tr("settings.chart_type"), fontSize = 11, color = "on_surface_variant" }),
+    ui.select({
+      key = "chart_type",
+      options = { tr("chart.line"), tr("chart.candle") },
+      selectedIndex = config ~= nil and config.chart_type == "candle" and 1 or 0,
+      onChange = function(index, _text)
+        if index ~= "0" and index ~= "1" then return end
+        local value = index == "1" and "candle" or "line"
+        if config == nil or config.chart_type ~= value then
+          send({ op = "set_chart_type", value = value })
+        end
+      end,
+    }),
+  })
+end
+
 -- ── Bar carousel ────────────────────────────────────────────────────────────
 -- New capability, not a v4 restoration: v4 could only show one fixed asset. The
 -- service owns the timing; this section only edits the runtime state it publishes.
@@ -577,6 +595,8 @@ local function render()
     }),
     ui.separator(),
     section(tr("settings.bar"), tr("settings.bar_coin_desc"), { bar_section() }),
+    ui.separator(),
+    section(tr("settings.chart"), "", { chart_section() }),
     ui.separator(),
     section(tr("settings.carousel"), tr("settings.carousel_desc"), { carousel_section() }),
     ui.separator(),

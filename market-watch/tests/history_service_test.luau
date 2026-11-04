@@ -108,6 +108,19 @@ first.callback(result("history"))
 check(snapshot().status == "ready" and #snapshot().points == 3 and snapshot().basis == "candle", "successful real adapter response")
 check(snapshot().updated_at == clock, "successful update time")
 check((writes["/mock-data/market.json"] or 0) == persisted, "history never persists configuration")
+local before_chart_jobs, before_chart_history = #jobs, count_history()
+local chart_epoch, chart_revision = snapshot().epoch, snapshot().revision
+check(state["market.config"].chart_type == "line", "old runtime defaults to a line chart")
+watchers["market.cmd"]({ op = "set_chart_type", value = "candle" })
+check(state["market.config"].chart_type == "candle" and writes["/mock-data/market.json"] == persisted + 1,
+  "chart choice is persisted and published")
+watchers["market.cmd"]({ op = "set_chart_type", value = "candle" })
+watchers["market.cmd"]({ op = "set_chart_type", value = "invalid" })
+check(state["market.config"].chart_type == "candle" and writes["/mock-data/market.json"] == persisted + 1,
+  "invalid and repeated chart choices do not write")
+check(#jobs == before_chart_jobs and count_history() == before_chart_history
+  and snapshot().epoch == chart_epoch and snapshot().revision == chart_revision,
+  "chart choice reuses history without any process, request or invalidation")
 local ready_revision = snapshot().revision
 clock = clock + 1000
 request()

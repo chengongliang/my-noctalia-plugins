@@ -2,9 +2,9 @@
 -- Representative upstream shapes; reversed rows and string fields are intentional.
 return {
   huobi = { status = "ok", data = {
-    { id = 1700000700, close = 103 },
-    { id = 1700000400, close = 101 },
-    { id = 1700000100, close = 100 },
+    { id = 1700000700, open = 101, high = 104, low = 100, close = 103 },
+    { id = 1700000400, open = 100, high = 102, low = 99, close = 101 },
+    { id = 1700000100, open = 99, high = 102, low = 98, close = 100 },
   } },
   binance = {
     { 1700000100000, "99", "102", "98", "100", "10", 1700000399999 },

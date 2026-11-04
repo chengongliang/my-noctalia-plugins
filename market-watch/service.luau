@@ -28,7 +28,7 @@
 --   command channel (clients write it, this service consumes and clears it):
 --     market.cmd = { op = ..., nonce = ... }
 --     refresh / refresh_all / force_refresh / add_watch / remove_watch /
---     move_watch / set_bar_coin / toggle_display_mode / set_price_alert /
+--     move_watch / set_bar_coin / toggle_display_mode / set_chart_type / set_price_alert /
 --     set_rapid_alert / set_carousel / export_config / import_config / search
 --
 -- The bar carousel (auto-rotating the bar asset) is new capability, not a v4
@@ -260,6 +260,7 @@ local function public_config()
     watch_list = copy_list(runtime.watch_list),
     bar_coin = runtime.bar_coin,
     display_mode = runtime.display_mode,
+    chart_type = runtime.chart_type,
     -- `ids` is the *effective* followed set (watch-list order), never empty while the
     -- watch list has entries: market.json may store an empty list as the shorthand for
     -- "rotate everything", but the panel's follow toggles need the resolved set.
@@ -1978,6 +1979,15 @@ local function toggle_display_mode()
   publish()
 end
 
+local function set_chart_type(value)
+  if not store.includes(store.VALID_CHART_TYPES, value) or runtime.chart_type == value then
+    return
+  end
+  runtime.chart_type = value
+  persist()
+  publish()
+end
+
 local function set_price_alert(id, enabled, upper, lower)
   local key = store.trim(id)
   if key == "" then
@@ -2221,6 +2231,8 @@ local function handle_command(command)
     set_bar_coin(command.id)
   elseif op == "toggle_display_mode" then
     toggle_display_mode()
+  elseif op == "set_chart_type" then
+    set_chart_type(command.value)
   elseif op == "set_price_alert" then
     set_price_alert(command.id, command.enabled, command.upper, command.lower)
   elseif op == "set_rapid_alert" then
