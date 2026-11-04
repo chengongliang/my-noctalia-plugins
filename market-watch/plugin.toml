@@ -137,12 +137,12 @@ placement = "attached"
 position = "center"
 open_near_click = false
 
-# Settings panel. "fill" spans the output's available extent and therefore needs
-# floating placement.
+# Settings panel. A fixed height keeps the four tabs compact; the long asset lists
+# scroll inside it instead of stretching the panel to the whole screen.
 [[panel]]
 id = "settings"
 entry = "settings_panel.luau"
 width = 560
-height = "fill"
+height = 620
 placement = "floating"
 position = "center"

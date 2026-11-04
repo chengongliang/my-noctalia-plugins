@@ -38,6 +38,14 @@
     "curl_missing": "curl is not installed"
   },
   "settings": {
+    "tab_assets": "Assets",
+    "tab_display": "Display",
+    "tab_alerts": "Alerts",
+    "tab_config": "Config",
+    "assets_empty": "No assets yet — add one on the Assets tab",
+    "price_alert_asset": "Asset to edit",
+    "filter_assets": "Filter by symbol or name",
+    "selected_count": "{count} of {total} selected",
     "bar": "Status bar",
     "bar_coin": "Status bar asset",
     "bar_coin_desc": "Select the asset to display in the status bar",
@@ -88,7 +96,7 @@
     "upper_price": "Upper price",
     "watch_empty": "No assets yet - search above to add one",
     "watch_list": "Watch list",
-    "watch_list_tip": "Click an asset to add or remove it, and use arrows to reorder",
+    "watch_list_tip": "Search to add assets; use the arrows to reorder and the trash button to remove",
     "search_pending": "Searching...",
     "search_note": "Availability is checked on demand; unrelated results are never listed.",
     "carousel": "Bar carousel",

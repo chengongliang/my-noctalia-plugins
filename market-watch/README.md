@@ -58,18 +58,20 @@ State and files below). There is no other companion program.
 
 1. Add the **Market Watch** bar widget to your bar from the widget picker.
 2. Open the settings panel (`noctalia msg panel-toggle chengongliang/market-watch:settings`)
-   or click the gear button in the market panel, then search for an asset such as
+   or click the gear button in the market panel, then use **Assets** to search for an asset such as
    `btc`, `xau` or `aapl` and click a result to add it to the watch list.
 3. Use the arrow buttons to reorder rows and the trash button to remove one. The
    first entry becomes the bar asset when the current one is removed.
-4. Pick the bar asset, the display mode, and optionally an upper and lower price per
-   asset, or a rapid move rule that watches the assets you tick.
+4. Use **Display** to pick the bar asset, display mode and chart type. In
+   **Alerts → Price alert**, select an asset to edit its upper and lower prices.
+   **Alerts → Rapid rise/fall alert** has a searchable monitored-asset list;
+   filtering does not change which assets are selected.
 5. Left click the bar widget to open the market table; the landing rows show price,
    24h change, 24h high and 24h low for each watched asset.
 6. Scroll the wheel over the bar widget to walk the displayed asset along the watch
    list, in the order the settings panel lists it. It wraps at both ends, so one
    gesture reaches every asset; with a single watched asset there is nothing to cycle.
-7. To stop choosing by hand, turn on the **bar carousel** in the settings panel: the
+7. To stop choosing by hand, turn on the **bar carousel** under **Display**: the
    widget then rotates the displayed asset on its own, every *interval* seconds
    (2-60, default 5). The rotation covers the assets you **follow** — the toggle on
    the left of each watch-list row — and with none followed it rotates the whole watch
@@ -108,7 +110,7 @@ the last good chart, while a first-load failure has
 a retry button. History stays in memory, separate from quotes and alert samples;
 it does not change quote polling or alert evaluation.
 
-In the plugin settings panel, choose **Chart → Chart type → Line / Candlestick**.
+In the plugin settings panel, choose **Display → Chart → Chart type → Line / Candlestick**.
 Line is the default. The choice is saved with runtime settings and included in
 configuration export/import. Candlesticks use the exchange's real open/high/low/close
 values, with wicks and the configured rise/fall colors; hovering a candle shows its
@@ -136,6 +138,12 @@ filled with invented prices. Assets without usable history show an explicit empt
 or error state. Public endpoint availability and rate limits depend on the source.
 
 ## Settings
+
+The panel has four fixed tabs: **Assets**, **Display**, **Alerts**, and **Config**.
+Only the active page is shown. The asset and monitored-asset lists scroll without
+moving navigation or search controls; price alerts show one asset's editor at a time.
+Opening the panel starts on **Assets**. Import/export and the reminder about host
+settings are on **Config**. Changes still save automatically through the service.
 
 The first group of settings is rendered by the shell from the manifest. The plugin
 reads them but cannot write them, so they are the *static* half of the configuration:

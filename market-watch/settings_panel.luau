@@ -14,7 +14,7 @@
 --
 -- Every mutation is published on the `market.cmd` channel and the panel re-renders
 -- from what the service echoes back in market.config, so the panel never holds
--- authoritative state - it only holds the search box and the export/import message.
+-- authoritative state - it only holds navigation, search and notice state.
 
 local alerts = require("./lib/alerts.luau")
 
@@ -38,6 +38,11 @@ local seen_message_nonce = nil
 local search_text = ""
 local search_key_generation = 0
 local show_close_button = true
+local active_tab = "assets"
+local alert_mode = "price"
+local price_alert_id = nil
+local rapid_filter = ""
+local render
 
 local command_seq = 0
 
@@ -47,8 +52,8 @@ local function send(command)
   noctalia.state.set("market.cmd", command)
 end
 
-local function tr(key)
-  return noctalia.tr(key)
+local function tr(key, subst)
+  return noctalia.tr(key, subst)
 end
 
 local function price_field(value)
@@ -65,6 +70,15 @@ local function name_for(row)
     return symbol .. " (" .. name .. ")"
   end
   return symbol
+end
+
+local function watched_row(id)
+  for _, row in ipairs(watch) do
+    if row.id == id then
+      return row
+    end
+  end
+  return nil
 end
 
 local function alert_rule(id)
@@ -166,10 +180,11 @@ local function search_section()
       }))
     end
 
+    local result_rows = {}
     for _, result in ipairs(results) do
       local id = result.id
       local label = name_for({ symbol = result.symbol, name = result.name })
-      table.insert(children, ui.button({
+      table.insert(result_rows, ui.button({
         key = "result_" .. tostring(id),
         text = label,
         glyph = "plus",
@@ -181,8 +196,16 @@ local function search_section()
           search_text = ""
           search_key_generation = search_key_generation + 1
           send({ op = "search", query = "" })
+          render()
         end,
       }))
+    end
+    if #result_rows > 0 then
+      table.insert(children, ui.scroll({
+        key = "watch_search_results",
+        height = math.min(#result_rows * 44, 176),
+        gap = 6,
+      }, result_rows))
     end
   end
 
@@ -249,16 +272,18 @@ local function watch_section()
     table.insert(rows, ui.label({ text = tr("settings.watch_empty"), fontSize = 11, color = "on_surface_variant" }))
   end
 
-  return ui.column({ gap = 6 }, rows)
+  return ui.scroll({ key = "watch_scroll", flexGrow = 1, gap = 6 }, rows)
 end
 
 -- ── Bar ─────────────────────────────────────────────────────────────────────
 
 local function bar_section()
   local options = {}
+  local option_ids = {}
   local bar_index = 0
   for index, row in ipairs(watch) do
     table.insert(options, row.symbol)
+    table.insert(option_ids, row.id)
     if config ~= nil and config.bar_coin == row.id then
       bar_index = index - 1
     end
@@ -269,13 +294,14 @@ local function bar_section()
 
   -- ui.select has no empty state: with nothing watched, point at the watch list.
   local bar_coin_control = #options == 0
-      and ui.label({ text = tr("settings.watch_empty"), fontSize = 11, color = "on_surface_variant" })
+      and ui.label({ text = tr("settings.assets_empty"), fontSize = 11, color = "on_surface_variant" })
     or ui.select({
       key = "bar_coin",
       options = options,
       selectedIndex = bar_index,
       onChange = function(index, _text)
-        local row = watch[(tonumber(index) or 0) + 1]
+        local option_index = tonumber(index)
+        local row = option_index ~= nil and watched_row(option_ids[option_index + 1]) or nil
         if row ~= nil then
           send({ op = "set_bar_coin", id = row.id })
         end
@@ -401,56 +427,87 @@ end
 -- ── Price alerts ────────────────────────────────────────────────────────────
 
 local function price_alerts_section()
-  local rows = {}
+  local row = watched_row(price_alert_id) or watch[1]
+  price_alert_id = row and row.id or nil
+  if row == nil then
+    return ui.label({ text = tr("settings.assets_empty"), fontSize = 11, color = "on_surface_variant" })
+  end
 
-  for _, row in ipairs(watch) do
-    local rule = alert_rule(row.id)
-    local valid = alerts.is_price_alert_valid(rule)
-    local children = {
-      ui.row({ align = "center", gap = 8 }, {
-        ui.toggle({
-          key = "pa_enabled_" .. tostring(row.id),
-          checked = rule.enabled == true,
-          onChange = function(value)
-            send({ op = "set_price_alert", id = row.id, enabled = value == "true" })
-          end,
-        }),
-        ui.label({
-          text = name_for(row) .. "  " .. tr("settings.price_alert_enabled"),
-          flexGrow = 1,
-          color = "on_surface",
-        }),
-      }),
-      ui.row({ gap = 8 }, {
-        labelled_input(tr("settings.upper_price"), "pa_upper_" .. tostring(row.id), price_field(rule.upper_price), tr("settings.price_placeholder"), function(value)
-          send({ op = "set_price_alert", id = row.id, upper = value })
-        end),
-        labelled_input(tr("settings.lower_price"), "pa_lower_" .. tostring(row.id), price_field(rule.lower_price), tr("settings.price_placeholder"), function(value)
-          send({ op = "set_price_alert", id = row.id, lower = value })
-        end),
-      }),
-    }
-
-    -- v4 showed the same validation message when the lower bound was not below the
-    -- upper one; the engine ignores an invalid range but keeps its state.
-    if not valid then
-      table.insert(children, ui.label({
-        text = tr("settings.invalid_price_range"),
-        fontSize = 11,
-        color = "error",
-      }))
+  local options, option_ids = {}, {}
+  local selected_index = 0
+  for index, asset in ipairs(watch) do
+    table.insert(options, name_for(asset))
+    table.insert(option_ids, asset.id)
+    if asset.id == price_alert_id then
+      selected_index = index - 1
     end
+  end
 
-    table.insert(rows, ui.column({
+  local rule = alert_rule(row.id)
+  local children = {
+    ui.row({ align = "center", gap = 8 }, {
+      ui.toggle({
+        key = "pa_enabled_" .. tostring(row.id),
+        checked = rule.enabled == true,
+        onChange = function(value)
+          if watched_row(row.id) ~= nil then
+            send({ op = "set_price_alert", id = row.id, enabled = value == "true" })
+          end
+        end,
+      }),
+      ui.label({
+        text = name_for(row) .. "  " .. tr("settings.price_alert_enabled"),
+        flexGrow = 1,
+        color = "on_surface",
+      }),
+    }),
+    ui.row({ gap = 8 }, {
+      labelled_input(tr("settings.upper_price"), "pa_upper_" .. tostring(row.id), price_field(rule.upper_price), tr("settings.price_placeholder"), function(value)
+        if watched_row(row.id) ~= nil then
+          send({ op = "set_price_alert", id = row.id, upper = value })
+        end
+      end),
+      labelled_input(tr("settings.lower_price"), "pa_lower_" .. tostring(row.id), price_field(rule.lower_price), tr("settings.price_placeholder"), function(value)
+        if watched_row(row.id) ~= nil then
+          send({ op = "set_price_alert", id = row.id, lower = value })
+        end
+      end),
+    }),
+  }
+
+  -- v4 showed the same validation message when the lower bound was not below the
+  -- upper one; the engine ignores an invalid range but keeps its state.
+  if not alerts.is_price_alert_valid(rule) then
+    table.insert(children, ui.label({
+      text = tr("settings.invalid_price_range"),
+      fontSize = 11,
+      color = "error",
+    }))
+  end
+
+  return ui.column({ gap = 10 }, {
+    ui.label({ text = tr("settings.price_alert_asset"), fontSize = 11, color = "on_surface_variant" }),
+    ui.select({
+      key = "price_alert_asset",
+      options = options,
+      selectedIndex = selected_index,
+      onChange = function(index, _text)
+        local option_index = tonumber(index)
+        local selected = option_index ~= nil and watched_row(option_ids[option_index + 1]) or nil
+        if selected ~= nil then
+          price_alert_id = selected.id
+          update()
+        end
+      end,
+    }),
+    ui.column({
       key = "price_alert_" .. tostring(row.id),
       gap = 6,
       fill = "surface_variant/0.25",
       radius = 8,
       padding = 8,
-    }, children))
-  end
-
-  return ui.column({ gap = 8 }, rows)
+    }, children),
+  })
 end
 
 -- ── Rapid alert ─────────────────────────────────────────────────────────────
@@ -460,20 +517,37 @@ local function rapid_section()
     or { enabled = false, threshold_percent = 5, window_minutes = 5, cooldown_minutes = 30, instrument_ids = {} }
 
   local toggles = {}
+  local selected_count = 0
+  local filter = string.lower(rapid_filter)
   for _, row in ipairs(watch) do
-    table.insert(toggles, ui.row({ key = "rapid_" .. tostring(row.id), align = "center", gap = 8 }, {
-      ui.toggle({
-        key = "rapid_toggle_" .. tostring(row.id),
-        checked = rapid_selected(row.id),
-        onChange = function()
-          send({ op = "set_rapid_alert", toggle_instrument = row.id })
-        end,
-      }),
-      ui.label({ text = name_for(row), flexGrow = 1, color = "on_surface" }),
+    local selected = rapid_selected(row.id)
+    if selected then
+      selected_count = selected_count + 1
+    end
+    if string.find(string.lower(name_for(row)), filter, 1, true) ~= nil then
+      table.insert(toggles, ui.row({ key = "rapid_" .. tostring(row.id), align = "center", gap = 8 }, {
+        ui.toggle({
+          key = "rapid_toggle_" .. tostring(row.id),
+          checked = selected,
+          onChange = function()
+            if watched_row(row.id) ~= nil then
+              send({ op = "set_rapid_alert", toggle_instrument = row.id })
+            end
+          end,
+        }),
+        ui.label({ text = name_for(row), flexGrow = 1, color = "on_surface" }),
+      }))
+    end
+  end
+  if #toggles == 0 then
+    table.insert(toggles, ui.label({
+      text = tr(#watch == 0 and "settings.assets_empty" or "settings.search_empty"),
+      fontSize = 11,
+      color = "on_surface_variant",
     }))
   end
 
-  return ui.column({ gap = 10 }, {
+  return ui.column({ flexGrow = 1, minHeight = 0, gap = 10 }, {
     ui.row({ align = "center", gap = 8 }, {
       ui.toggle({
         key = "rapid_enabled",
@@ -512,7 +586,22 @@ local function rapid_section()
       end),
     }),
     ui.label({ text = tr("settings.rapid_coins"), fontSize = 11, color = "on_surface_variant" }),
-    ui.column({ gap = 4 }, toggles),
+    ui.input({
+      key = "rapid_filter",
+      value = rapid_filter,
+      placeholder = tr("settings.filter_assets"),
+      onChange = function(value)
+        rapid_filter = value or ""
+        render()
+      end,
+    }),
+    ui.label({
+      key = "rapid_selected_count",
+      text = tr("settings.selected_count", { count = selected_count, total = #watch }),
+      fontSize = 11,
+      color = "on_surface_variant",
+    }),
+    ui.scroll({ key = "rapid_assets_scroll", flexGrow = 1, gap = 4 }, toggles),
   })
 end
 
@@ -556,6 +645,10 @@ local function display_signature()
     tostring(show_close_button),
     tostring(health and health.error or ""),
     tostring(config_message and config_message.nonce or ""),
+    active_tab,
+    alert_mode,
+    tostring(price_alert_id or ""),
+    rapid_filter,
     search_text ~= "" and "search" or "",
     encoded(config),
     encoded(watch),
@@ -564,14 +657,12 @@ local function display_signature()
   }, "\31")
 end
 
-local function render()
+render = function()
   local body = {
     ui.row({ align = "center", gap = 8, key = "settings_header" }, {
       ui.glyph({ name = "settings", size = 18, color = "primary" }),
       ui.label({ text = tr("panel.settings"), fontSize = 16, fontWeight = "bold", flexGrow = 1 }),
     }),
-    ui.label({ text = tr("settings.static_note"), fontSize = 11, color = "on_surface_variant" }),
-    ui.separator(),
   }
 
   if show_close_button then
@@ -584,28 +675,69 @@ local function render()
     }))
   end
 
+  local tabs = {}
+  for _, tab in ipairs({ "assets", "display", "alerts", "config" }) do
+    table.insert(tabs, ui.button({
+      key = "settings_tab_" .. tab,
+      text = tr("settings.tab_" .. tab),
+      flexGrow = 1,
+      selected = active_tab == tab,
+      variant = active_tab == tab and "primary" or "ghost",
+      onClick = function()
+        active_tab = tab
+        update()
+      end,
+    }))
+  end
+  table.insert(body, ui.row({ gap = 4 }, tabs))
+  table.insert(body, ui.separator())
+
   if health ~= nil and health.error ~= "" then
     table.insert(body, ui.label({ text = health.error, color = "error" }))
   end
 
-  table.insert(body, ui.scroll({ key = "settings_body", flexGrow = 1, gap = 16 }, {
-    section(tr("settings.watch_list"), tr("settings.watch_list_tip"), {
-      search_section(),
-      watch_section(),
-    }),
-    ui.separator(),
-    section(tr("settings.bar"), tr("settings.bar_coin_desc"), { bar_section() }),
-    ui.separator(),
-    section(tr("settings.chart"), "", { chart_section() }),
-    ui.separator(),
-    section(tr("settings.carousel"), tr("settings.carousel_desc"), { carousel_section() }),
-    ui.separator(),
-    section(tr("settings.price_alerts"), tr("settings.price_alerts_desc"), { price_alerts_section() }),
-    ui.separator(),
-    section(tr("settings.rapid_alert"), tr("settings.rapid_alert_desc"), { rapid_section() }),
-    ui.separator(),
-    section(tr("settings.config_mgmt"), "", { config_section() }),
-  }))
+  if active_tab == "assets" then
+    table.insert(body, section(tr("settings.watch_list"), tr("settings.watch_list_tip"), { search_section() }))
+    table.insert(body, watch_section())
+  elseif active_tab == "display" then
+    table.insert(body, ui.scroll({ key = "settings_display", flexGrow = 1, gap = 16 }, {
+      section(tr("settings.bar"), tr("settings.bar_coin_desc"), { bar_section() }),
+      ui.separator(),
+      section(tr("settings.chart"), "", { chart_section() }),
+      ui.separator(),
+      section(tr("settings.carousel"), tr("settings.carousel_desc"), { carousel_section() }),
+    }))
+  elseif active_tab == "alerts" then
+    local modes = {}
+    for _, mode in ipairs({ "price", "rapid" }) do
+      table.insert(modes, ui.button({
+        key = "alert_mode_" .. mode,
+        text = tr(mode == "price" and "settings.price_alert_enabled" or "settings.rapid_alert"),
+        flexGrow = 1,
+        selected = alert_mode == mode,
+        variant = alert_mode == mode and "secondary" or "ghost",
+        onClick = function()
+          alert_mode = mode
+          update()
+        end,
+      }))
+    end
+    table.insert(body, ui.row({ gap = 8 }, modes))
+    if alert_mode == "price" then
+      table.insert(body, ui.scroll({ key = "settings_price", flexGrow = 1, gap = 16 }, {
+        section(tr("settings.price_alerts"), tr("settings.price_alerts_desc"), { price_alerts_section() }),
+      }))
+    else
+      table.insert(body, ui.label({ text = tr("settings.rapid_alert_desc"), fontSize = 11, color = "on_surface_variant" }))
+      table.insert(body, rapid_section())
+    end
+  else
+    table.insert(body, ui.scroll({ key = "settings_config", flexGrow = 1, gap = 16 }, {
+      section(tr("settings.config_mgmt"), "", { config_section() }),
+      ui.separator(),
+      ui.label({ text = tr("settings.static_note"), fontSize = 11, color = "on_surface_variant" }),
+    }))
+  end
 
   panel.render(ui.column({ flexGrow = 1, gap = 12 }, body))
   -- Commit only after the tree was handed over: a render the host's CPU budget aborts is
@@ -655,6 +787,7 @@ end
 function onSearchChange(value)
   search_text = value or ""
   send({ op = "search", query = search_text })
+  render()
 end
 
 function onExportClicked()
@@ -670,6 +803,7 @@ function onCloseClicked()
 end
 
 function onOpen(_context)
+  active_tab = "assets"
   -- Read on every open: it does not reload when the shell setting changes, and
   -- only an explicit false hides the button (the host's own convention).
   show_close_button = noctalia.getSetting("shell.show_close_buttons") ~= false

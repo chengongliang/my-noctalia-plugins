@@ -68,6 +68,12 @@ local function find(key, node)
   end
 end
 env.onOpen()
+local display_tab = assert(find("settings_tab_display"))
+if type(display_tab.props.onClick) == "string" then
+  env[display_tab.props.onClick]()
+else
+  display_tab.props.onClick()
+end
 local select = assert(find("chart_type"))
 check(select.type == "select" and select.props.selectedIndex == 0
   and select.props.options[1] == "chart.line" and select.props.options[2] == "chart.candle", "settings expose both translated chart choices")
