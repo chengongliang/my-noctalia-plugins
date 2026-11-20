@@ -111,7 +111,16 @@
     "chart_type": "图表类型"
   },
   "history": {
-    "title": "最近 24 小时 · 每 30 秒刷新",
+    "title": "价格走势 · 每 30 秒刷新",
+    "timeframe": "周期",
+    "timeframes": {
+      "5m": "分时",
+      "4h": "4h",
+      "1d": "日线",
+      "1w": "周线"
+    },
+    "day_window": "24 小时",
+    "timeframe_unavailable": "此数据源不提供这些 K 线周期。",
     "back": "返回资产列表",
     "sample": "{time} · {price} {currency}",
     "interval": "采样间隔：约 {minutes} 分钟",

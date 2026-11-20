@@ -21,6 +21,10 @@ local labels = {
   ["history.high"] = "High {price}",
   ["history.low"] = "Low {price}",
   ["history.ohlc"] = "O {open} H {high} L {low} C {close}",
+  ["history.timeframes.5m"] = "Intraday",
+  ["history.timeframes.4h"] = "4h",
+  ["history.timeframes.1d"] = "Daily",
+  ["history.timeframes.1w"] = "Weekly",
 }
 local env = setmetatable({}, { __index = _G })
 env.require = function(path) return dofile(path) end
@@ -91,7 +95,7 @@ local function snapshot(id, status, revision, options)
     },
   }
   for name, item in pairs(options or {}) do value[name] = item end
-  state["market.history:" .. id] = value
+  state["market.history:" .. id .. ((value.timeframe == nil or value.timeframe == "5m") and "" or ":" .. value.timeframe)] = value
   return value
 end
 local btc, eth = "huobi:spot:btcusdt", "huobi:spot:ethusdt"
@@ -266,7 +270,8 @@ state["market.config"].chart_type = "candle"
 env.update()
 assert(#commands == before_mode, "switching chart type reuses the loaded history")
 assert(key("history-candle-" .. btc .. "-1") and key("history-candle-" .. btc .. "-288"), "full day of real candles renders")
-assert(text("High 105") and text("Low 95") and text("O 100 H 105 L 95 C 101"), "candles expose full OHLC and wick bounds")
+assert(text("O 100 H 105 L 95 C 101"), "candles expose full OHLC")
+assert(key("history-bounds") == nil, "candle mode removes redundant bounds row since OHLC already displays high and low")
 local function check_tree(node)
   assert(#node.children <= 256, "UI nodes must respect the host child limit")
   for _, child in ipairs(node.children) do check_tree(child) end
@@ -282,6 +287,27 @@ for _ = 1, 3 do
 end
 assert(text("O 100 H 105 L 95 C 101").props.baseline == "textFixedHeight",
   "changing OHLC values must retain a font-metric height")
+
+local diverse_candles = {}
+for index = 1, 288 do
+  diverse_candles[index] = {
+    timestamp_ms = now - (289 - index) * 300000,
+    price = 100, open = 100, high = 101, low = 99, close = 100,
+  }
+end
+diverse_candles[1] = { timestamp_ms = now - 288 * 300000, price = 98, open = 97, high = 99, low = 96, close = 98 }
+diverse_candles[50] = { timestamp_ms = now - 239 * 300000, price = 115, open = 105, high = 120, low = 104, close = 115 }
+diverse_candles[150] = { timestamp_ms = now - 139 * 300000, price = 85, open = 90, high = 91, low = 80, close = 85 }
+diverse_candles[288] = { timestamp_ms = now - 300000, price = 105, open = 104, high = 106, low = 103, close = 105 }
+snapshot(btc, "ready", 99, { points = diverse_candles })
+env.update()
+assert(text("O 97 H 120 L 80 C 105"), "default unhovered OHLC readout must show 24h open, high, low, and current close")
+local last_cell = key("history-candle-" .. btc .. "-288")
+invoke(last_cell.props.onHover, "true", last_cell.props.key)
+assert(text("O 104 H 106 L 103 C 105"), "hovering candle must show that candle's individual OHLC")
+invoke(last_cell.props.onHover, "false", last_cell.props.key)
+assert(text("O 97 H 120 L 80 C 105"), "unhovering must revert to 24h extrema")
+
 local normal_color = cell.children[2].props.fill
 state["market.config"].red_rises = true
 env.update()
@@ -297,5 +323,111 @@ local before_reload = #commands
 state["market.config"].history_epoch = state["market.config"].history_epoch + 1
 env.update()
 assert(#commands == before_reload + 1 and not key("history-" .. btc .. "-1"), "service reload must replace the old epoch and request fresh history")
+
+snapshot(btc, "ready", 12)
+env.update()
+assert(key("history-timeframes") and key("history-timeframe-5m").props.variant == "secondary",
+  "the existing intraday view remains the default and exposes interval buttons")
+local before_timeframe = #commands
+click("history-timeframe-4h")
+assert(#commands == before_timeframe + 1 and commands[#commands].timeframe == "4h" and commands[#commands].id == btc,
+  "4h button immediately requests actual four-hour history")
+assert(key("history-timeframe-4h").props.variant == "secondary" and not key("history-" .. btc .. "-1") and text("panel.loading"),
+  "selection feedback is immediate and old interval data is removed")
+click("history-timeframe-4h")
+env.onRefreshClicked()
+env.onHistoryTimeframeChanged("2h")
+assert(#commands == before_timeframe + 1, "repeat and invalid interval clicks cannot duplicate pending requests")
+click("history-timeframe-1d")
+assert(#commands == before_timeframe + 2 and commands[#commands].timeframe == "1d", "daily can be selected while 4h is loading")
+
+local function interval_snapshot(timeframe, interval, revision)
+  local points = {}
+  for index = 1, 3 do
+    points[index] = { timestamp_ms = now - (4 - index) * interval, price = 100 + index,
+      open = 90, high = 110, low = 80, close = 100 + index }
+  end
+  return snapshot(btc, "ready", revision, {
+    timeframe = timeframe, interval_ms = interval, window_ms = interval * 300, points = points,
+  })
+end
+interval_snapshot("4h", 14400000, 13)
+snapshot(btc, "ready", 14)
+env.update()
+assert(text("panel.loading") and not key("history-candle-" .. btc .. "-4h-1"),
+  "late intraday and 4h responses cannot appear in a daily view")
+local daily = interval_snapshot("1d", 86400000, 15)
+env.update()
+assert(key("history-candle-" .. btc .. "-1d-1") and key("history-candle-" .. btc .. "-1d-3"),
+  "daily candles older than 24 hours remain drawable")
+assert(text("O 90 H 110 L 80 C 103") and not text("24H"), "daily default OHLC describes the selected window")
+assert_readout(daily.points[3].timestamp_ms, "103")
+invoke(stable_move, "0", "1")
+assert_readout(daily.points[3].timestamp_ms, "103")
+local daily_cell = key("history-candle-" .. btc .. "-1d-1")
+invoke(daily_cell.props.onHover, "true", daily_cell.props.key)
+assert_readout(daily.points[1].timestamp_ms, "101")
+invoke(cell.props.onHover, "true", cell.props.key)
+assert_readout(daily.points[1].timestamp_ms, "101")
+check_tree(tree)
+
+click("history-timeframe-1w")
+assert(commands[#commands].timeframe == "1w" and text("panel.loading"), "weekly selection clears daily hover and requests weekly candles")
+snapshot(btc, "error", 16, { timeframe = "1w", points = {}, updated_at = 0, error_code = "network-error" })
+env.update()
+assert(text("history.load_failed") and text("history.retry") and not key("history-candle-" .. btc .. "-1d-1"),
+  "weekly first-load failure does not borrow daily data")
+env.onRefreshClicked()
+local weekly = interval_snapshot("1w", 604800000, 17)
+env.update()
+assert(key("history-candle-" .. btc .. "-1w-1") and key("history-timeframe-1w").props.variant == "secondary",
+  "weekly history has its own chart and active button")
+assert_readout(weekly.points[3].timestamp_ms, "103")
+snapshot(btc, "stale", 18, {
+  timeframe = "1w", interval_ms = 604800000, window_ms = 604800000 * 300,
+  points = weekly.points, updated_at = weekly.updated_at, error_code = "network-error",
+})
+env.update()
+assert(key("history-candle-" .. btc .. "-1w-1") and text("history.update_failed"), "failed weekly refresh retains only the weekly chart")
+click("history-timeframe-4h")
+assert(key("history-candle-" .. btc .. "-4h-1") and not key("history-candle-" .. btc .. "-1w-1"),
+  "returning to a cached interval immediately shows that interval's candles")
+env.onBackClicked()
+local after_period_back = #commands
+now = now + 90000
+env.update()
+assert(#commands == after_period_back, "returning to the list stops requests for all intervals")
+state["market.watch"][2] = { id = eth, symbol = "ETH", available = true }
+env.update()
+click(eth)
+assert(commands[#commands].timeframe == "4h", "asset navigation retains the current interval while the panel is open")
+env.onClose()
+local after_period_close = #commands
+now = now + 90000
+env.update()
+env.onHistoryTimeframeChanged("1w")
+assert(#commands == after_period_close, "closed panel callbacks cannot request new intervals")
+env.onOpen()
+click(btc)
+assert(commands[#commands].timeframe == "5m", "reopening the panel resets the transient interval to intraday")
+
+state["market.config"].source = "coingecko"
+state["market.config"].history_epoch = state["market.config"].history_epoch + 1
+state["market.watch"] = { { id = "coingecko:spot:bitcoin", symbol = "BTC", available = true } }
+env.update()
+click("coingecko:spot:bitcoin")
+local before_unsupported = #commands
+for _, timeframe in ipairs({ "4h", "1d", "1w" }) do
+  local button = key("history-timeframe-" .. timeframe)
+  assert(button.props.enabled == false and button.props.tooltip == "history.timeframe_unavailable",
+    "price-only source explains unsupported candle intervals")
+  invoke(button.props.onClick)
+end
+assert(#commands == before_unsupported and commands[#commands].timeframe == "5m", "unsupported intervals cannot issue misleading requests")
+local has_year = false
+for _, call in ipairs(format_calls) do
+  if call.pattern == "%Y-%m-%d %H:%M %Z" then has_year = true end
+end
+assert(has_year, "long-period chart times include the year")
 assert(#format_calls > 0)
-print("history_panel_test: navigation, hover, refresh, stale states and context isolation passed")
+print("history_panel_test: navigation, intervals, hover, refresh, stale states and context isolation passed")

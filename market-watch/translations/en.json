@@ -111,7 +111,16 @@
     "chart_type": "Chart type"
   },
   "history": {
-    "title": "Last 24 hours · refresh every 30 s",
+    "title": "Price history · refresh every 30 s",
+    "timeframe": "Interval",
+    "timeframes": {
+      "5m": "Intraday",
+      "4h": "4h",
+      "1d": "Daily",
+      "1w": "Weekly"
+    },
+    "day_window": "24h",
+    "timeframe_unavailable": "This source does not provide these candle intervals.",
     "back": "Back to assets",
     "sample": "{time} · {price} {currency}",
     "interval": "Sampling: about {minutes} min",

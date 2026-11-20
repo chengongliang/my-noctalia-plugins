@@ -43,6 +43,17 @@ local host = {
     decode = function(body)
       if body == "runtime" then return { watch_list = { "btc", "eth", "bnb", "sol", "xrp" } } end
       if body == "history" then return fixture end
+      local intervals = { ["history-4h"] = 14400000, ["history-1d"] = 86400000, ["history-1w"] = 604800000 }
+      if intervals[body] then
+        local value = copy(fixture)
+        for index, row in ipairs(value.data) do row.id = (clock - (4 - index) * intervals[body]) / 1000 end
+        return value
+      end
+      if body == "single-week" then
+        local row = copy(fixture.data[1])
+        row.id = (clock - 86400000) / 1000
+        return { status = "ok", data = { row } }
+      end
       if body == "empty" then return { status = "ok", data = {} } end
       if body == "rate-limit" then return { status = "error", ["err-code"] = "rate-limit" } end
       if body == "import" then return imported end
@@ -63,7 +74,7 @@ local host = {
   },
   runAsync = function(argv, callback)
     local url = argv[#argv]
-    local is_history = url:find("period=5min", 1, true) ~= nil or url:find("interval=5m", 1, true) ~= nil
+    local is_history = url:find("size=300", 1, true) ~= nil or url:find("limit=300", 1, true) ~= nil
     if is_history and start_mode == "false" then return false end
     if is_history and start_mode == "throw" then error("mock host budget interrupt") end
     jobs[#jobs + 1] = { argv = argv, callback = callback, history = is_history }
@@ -78,9 +89,11 @@ env.require = function(path)
 end
 assert(loadfile(root .. "/service.luau", "t", env))()
 local btc, eth = "huobi:spot:btcusdt", "huobi:spot:ethusdt"
-local function snapshot(id) return state["market.history:" .. (id or btc)] end
-local function request(id)
-  watchers["market.cmd"]({ op = "history_request", id = id or btc })
+local function snapshot(id, timeframe)
+  return state["market.history:" .. (id or btc) .. ((timeframe == nil or timeframe == "5m") and "" or ":" .. timeframe)]
+end
+local function request(id, timeframe)
+  watchers["market.cmd"]({ op = "history_request", id = id or btc, timeframe = timeframe })
 end
 local function latest_history()
   for index = #jobs, 1, -1 do if jobs[index].history then return jobs[index] end end
@@ -121,6 +134,42 @@ check(state["market.config"].chart_type == "candle" and writes["/mock-data/marke
 check(#jobs == before_chart_jobs and count_history() == before_chart_history
   and snapshot().epoch == chart_epoch and snapshot().revision == chart_revision,
   "chart choice reuses history without any process, request or invalidation")
+
+local period_jobs = {}
+for _, timeframe in ipairs({ "4h", "1d", "1w" }) do
+  request(btc, timeframe)
+  period_jobs[timeframe] = latest_history()
+  check(snapshot(btc, timeframe).status == "loading" and #snapshot(btc, timeframe).points == 0,
+    "new interval cannot show another interval's cached candles")
+  local count = count_history()
+  request(btc, timeframe)
+  check(count_history() == count, "duplicate interval requests share their in-flight slot")
+end
+period_jobs["1w"].callback(result("history-1w"))
+local week_revision = snapshot(btc, "1w").revision
+period_jobs["4h"].callback(result("history-4h"))
+period_jobs["1d"].callback(result("history-1d"))
+for timeframe, interval in pairs({ ["4h"] = 14400000, ["1d"] = 86400000, ["1w"] = 604800000 }) do
+  local value = snapshot(btc, timeframe)
+  check(value.status == "ready" and value.timeframe == timeframe and value.interval_ms == interval
+    and value.window_ms == interval * 300 and #value.points == 3 and value.first_at == clock - 3 * interval,
+    "requested interval retains history beyond the intraday window")
+end
+check(snapshot(btc, "1w").revision == week_revision and snapshot().revision == chart_revision,
+  "late interval results cannot overwrite other interval snapshots")
+request(btc, "1w")
+latest_history().callback(result("single-week"))
+check(snapshot(btc, "1w").status == "ready" and #snapshot(btc, "1w").points == 1,
+  "a newly listed asset can render its only real weekly candle")
+request(btc, "1w")
+latest_history().callback(result("", { exitCode = 28 }))
+check(snapshot(btc, "1w").status == "stale" and #snapshot(btc, "1w").points == 1,
+  "a failed weekly refresh preserves a single valid candle")
+local before_bad_timeframe = count_history()
+for _, invalid in ipairs({ "3h", true, false, {} }) do request(btc, invalid) end
+check(count_history() == before_bad_timeframe and snapshot().revision == chart_revision,
+  "invalid interval commands cannot start processes or modify valid history")
+
 local ready_revision = snapshot().revision
 clock = clock + 1000
 request()
@@ -154,6 +203,9 @@ local old_epoch = snapshot().epoch
 config.proxy_url = "socks5://127.0.0.1:1080"
 env.onConfigChanged()
 check(snapshot() == nil, "proxy switch clears old curve")
+for _, timeframe in ipairs({ "4h", "1d", "1w" }) do
+  check(snapshot(btc, timeframe) == nil, "proxy switch clears every interval cache")
+end
 env.update()
 check(state["market.config"].history_epoch > old_epoch, "proxy epoch reaches panel configuration")
 request()
@@ -192,10 +244,13 @@ end
 
 request()
 local removed = latest_history()
+request(btc, "4h")
+local removed_period = latest_history()
 watchers["market.cmd"]({ op = "remove_watch", id = btc })
-check(snapshot() == nil, "removed watch clears history state")
+check(snapshot() == nil and snapshot(btc, "4h") == nil, "removed watch clears all interval history states")
 removed.callback(result("history"))
-check(snapshot() == nil, "removed asset cannot be resurrected by late response")
+removed_period.callback(result("history-4h"))
+check(snapshot() == nil and snapshot(btc, "4h") == nil, "removed asset cannot be resurrected by late interval responses")
 local before_invalid = count_history()
 request("huobi:spot:notwatchedusdt")
 check(count_history() == before_invalid and state["market.history:huobi:spot:notwatchedusdt"] == nil, "foreign id does not grow cache")
@@ -231,8 +286,18 @@ check(snapshot(binance_eth) == nil, "imported-away response does not restore his
 local sol = "binance:spot:SOLUSDT"
 request(sol)
 check(snapshot(sol) ~= nil, "current history exists before hot reload")
+request(sol, "1w")
+check(snapshot(sol, "1w") ~= nil, "weekly history exists before hot reload")
 local reload_epoch = state["market.config"].history_epoch
 clock = clock + 1
 assert(loadfile(root .. "/service.luau", "t", env))()
-check(snapshot(sol) == nil and state["market.config"].history_epoch > reload_epoch, "service reload clears transient keys and changes epoch")
+check(snapshot(sol) == nil and snapshot(sol, "1w") == nil and state["market.config"].history_epoch > reload_epoch,
+  "service reload clears every interval's transient keys and changes epoch")
+local before_parallel_periods = count_history()
+for _, timeframe in ipairs({ "5m", "4h", "1d", "1w" }) do request(sol, timeframe) end
+check(count_history() == before_parallel_periods + 4, "four different intervals use four bounded process slots")
+watchers["market.cmd"]({ op = "add_watch", ref = "binance:spot:BTCUSDT" })
+request("binance:spot:BTCUSDT", "4h")
+check(count_history() == before_parallel_periods + 4 and snapshot("binance:spot:BTCUSDT", "4h").error_code == "busy",
+  "rapid timeframe switches cannot bypass global history concurrency")
 print("History service tests passed: " .. tostring(checks))

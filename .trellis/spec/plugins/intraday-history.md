@@ -1,4 +1,4 @@
-# Market Watch Intraday History (Noctalia v5)
+# Market Watch Price History (Noctalia v5)
 
 ## 1. Scope / Trigger
 
@@ -9,17 +9,22 @@ manifest.json examples elsewhere in this layer describe the older implementation
 ## 2. Signatures
 
 ```lua
-Providers.history_url(provider, market_type, instrument) -- string URL or ""
-Providers.parse_history(provider, response, instrument) -- history record or nil
-History.prepare(points, now_ms, interval_ms, chart_type) -- chart data
+Providers.HISTORY_TIMEFRAMES                            -- { "5m", "4h", "1d", "1w" }
+Providers.history_interval_ms(timeframe)                -- duration or nil
+Providers.history_url(provider, market_type, instrument, timeframe) -- string URL or ""
+Providers.parse_history(provider, response, instrument, timeframe) -- history record or nil
+History.state_key(id, timeframe)                        -- shared history state key
+History.prepare(points, now_ms, interval_ms, chart_type, window_ms) -- chart data
 History.graph_values(segment)                          -- host-aligned curve values
 History.price_at(segment, norm_x)                      -- interpolated time/price or nil
 History.point_at(segment, norm_x)                      -- nearest point, index or nil
 ```
 
-The panel requests data with `market.cmd = { op = "history_request", id, nonce }`.
-The service publishes each asset to `market.history:<full instrument id>` and
-includes `history_epoch` in `market.config`.
+The panel requests data with `market.cmd = { op = "history_request", id, timeframe, nonce }`.
+Missing `timeframe` defaults to `5m`. The service publishes intraday data to the
+compatible `market.history:<full instrument id>` key, and longer intervals to
+`market.history:<full instrument id>:<timeframe>`. Both entries use `History.state_key`.
+The service includes `history_epoch` in `market.config`.
 
 ## 3. Contracts
 
@@ -33,16 +38,29 @@ includes `history_epoch` in `market.config`.
 - `Store` owns persisted `chart_type` (`line` by default, or `candle`), including
   import/export. The service validates `set_chart_type` and publishes the choice
   in `market.config`; switching modes reuses loaded history without a new request.
+- The panel owns transient `timeframe`: `5m` (Intraday), `4h`, `1d`, or `1w`.
+  Navigating between assets retains it; reopening resets it to Intraday. It does
+  not add a persisted setting or affect quote/alert polling. CoinGecko only offers
+  Intraday; disable other buttons with an explanatory tooltip.
+- Exchange requests fetch up to 300 actual candles: Huobi uses
+  `5min/4hour/1day/1week`, Binance `5m/4h/1d/1w`, OKX `5m/4H/1D/1W`.
+  Intraday retains the 24-hour window; other windows span `interval_ms * 300`.
+  Never relabel five-minute samples as daily or weekly candles.
 - State includes `id`, `source`, `market_type`, `epoch`, `revision`, `status`,
-  `points`, `interval_ms`, `basis`, `first_at`, `last_at`, `updated_at`, `error_code`.
+  `timeframe`, `window_ms`, `points`, `interval_ms`, `basis`, `first_at`, `last_at`,
+  `updated_at`, `error_code`.
   `updated_at = 0` means there has been no successful load; never format it as a date.
 - Identity is provider/market/exact exchange symbol. The service validates requests
   against the current watch list; the panel does not reconstruct provider URLs.
 - Only a visible selected detail schedules a request, on entry and every 30 seconds.
   The service has no historical polling timer. Close/back stop new requests;
   already running curl can finish without reopening the detail.
-- Deduplicate per id/epoch. Clear history on provider, market, or proxy changes;
-  prune removed assets. Obsolete callbacks may not publish or release a newer slot.
+- Deduplicate per id/timeframe/epoch; count all intervals towards the global
+  four-process history limit. Cache keys, in-flight tokens, panel snapshots and
+  chart node keys separate intervals so late responses/hover events cannot cross
+  into a different chart. Clear all intervals on provider, market, proxy changes
+  and service reload; prune all intervals of removed assets. Obsolete callbacks
+  may not publish or release a newer slot.
 - Reuse argv-form curl and the configured proxy. Check truncation, body length,
   exit status and decoded type before parsing. Stay within 100 KiB per JSON decode.
 - The cache is in memory, separate from quote/alert state and persisted configuration.
@@ -52,6 +70,10 @@ includes `history_epoch` in `market.config`.
 - Derive hover times from real source timestamps and display the local zone.
   Line hover interpolates time and price at x using the host's Hermite curve,
   independent of pointer y; candle hover reads the actual interval's OHLC.
+  In candle mode, the unhovered default OHLC readout summarizes the displayed
+  window (window open/high/low and current close), including the 24-hour summary
+  for Intraday, rather than a single interval's extrema. Longer windows include
+  the year in timestamps. One real candle remains drawable for newly listed assets.
   Split long missing intervals, retain proportional time spacing and one common vertical price scale.
   A constant-price line is centered; empty/single-point data does not pretend to
   be a complete day's line. Keep full price precision in hover readouts.
@@ -73,7 +95,10 @@ includes `history_epoch` in `market.config`.
 | Refresh fails with good points | Stale curve and original successful time |
 | Upstream empty/invalid/truncated/oversized response | Reject, preserve good history |
 | No usable history, or line mode with fewer than two points | Clear empty/insufficient state |
-| Duplicate requests or rapid manual refresh | No duplicate in-flight process per id |
+| Duplicate requests or rapid manual refresh | No duplicate in-flight process per id/timeframe |
+| Invalid timeframe | Ignore command; no process or cache entry |
+| Rapid 4h/daily/weekly switches | Active button changes immediately; show only selected interval's cache; total history processes ≤ 4 |
+| Single valid weekly candle / failed refresh | Render the real candle / retain it as stale |
 | Old epoch or superseded token callback | No publication or clearing newer request |
 | Close/back then time advances | No new history request |
 | NaN/infinite/nonpositive price, future/out-of-window time | Exclude from chart |
@@ -86,6 +111,8 @@ includes `history_epoch` in `market.config`.
   a full day. Failed network access remains an error, not a fabricated dataset.
 - Base: current CoinGecko `days=1` omits `interval`; show the source's actual cadence
   and coverage, even when shorter than 24 hours.
+- Good: daily/weekly requests retain older timestamps outside the intraday cutoff,
+  and an older 4h callback only updates its own state key.
 - Bad: explicitly requesting CoinGecko `interval=5m` as if universally free, using
   rapid-alert samples as daily history, or feeding downloaded history into alerts.
 
@@ -95,7 +122,10 @@ Run history pure tests plus real service/panel mocked-host lifecycle tests and t
 existing provider/alert tests under Lua 5.4. Assert timestamps/IDs, all provider
 market variants, cleanup/token isolation, request counts across 30 seconds and
 close/back, full-precision hover, gaps/constant prices, stale preservation and
-first-load dates. Run `noctalia plugins lint .` and the official plugin validator;
+first-load dates. Assert all three exchange periods in spot/perpetual URLs,
+invalid commands, separate interval snapshots and process slots, long-window
+cutoffs, single weekly candles, period buttons, year-bearing hover times, and
+all-period cleanup on removal/proxy change/reload. Run `noctalia plugins lint .` and the official plugin validator;
 regenerate committed `catalog.toml` when the version or minimum API changes.
 Report GUI/light-dark/network checks separately from mocked tests.
 Hover regressions must assert the same prefix-free format and fixed label-height

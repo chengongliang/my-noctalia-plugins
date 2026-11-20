@@ -12,8 +12,12 @@ local function candle(point)
     and point.high >= math.max(point.open, point.close)
 end
 
-function History.prepare(points, now_ms, interval_ms, chart_type)
-  local window_start = now_ms - 86400000
+function History.state_key(id, timeframe)
+  return "market.history:" .. id .. ((timeframe == nil or timeframe == "5m") and "" or ":" .. timeframe)
+end
+
+function History.prepare(points, now_ms, interval_ms, chart_type, window_ms)
+  local window_start = now_ms - (finite(window_ms) and window_ms > 0 and window_ms or 86400000)
   local interval = finite(interval_ms) and interval_ms > 0 and interval_ms or 300000
   local by_time = {}
   for _, point in ipairs(type(points) == "table" and points or {}) do

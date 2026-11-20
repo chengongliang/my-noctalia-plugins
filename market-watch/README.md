@@ -11,7 +11,7 @@ price alerts and a rapid rise/fall detector can notify you when something moves.
 | Field | Value |
 | --- | --- |
 | Manifest id | `chengongliang/market-watch` |
-| Version | 2.2.0 |
+| Version | 2.2.1 |
 | Plugin API | 29 |
 | Dependency | `curl` |
 
@@ -94,11 +94,14 @@ mode, settings, refresh now — cannot be a context menu in v5, because panels o
 only context-menu API. The equivalent actions are the panel's refresh and gear buttons
 and the IPC events listed under Plugin.
 
-## Intraday chart
+## Price chart
 
 Click an asset row in the market table to open its detail in the same panel. The
-chart covers the recent 24-hour window, using approximately five-minute samples
-when the source provides them. Move the pointer over a line to read its price at that horizontal position
+default **Intraday** view covers the recent 24-hour window, using approximately five-minute samples
+when the source provides them. The interval buttons above the chart switch to **4h**, **Daily**, or
+**Weekly**, each requesting up to 300 real exchange candles at that interval. The chart type still
+follows **Display → Chart → Chart type**. The selected interval stays when navigating to another
+asset and resets to Intraday when reopening the panel. Move the pointer over a line to read its price at that horizontal position
 above the chart; vertical pointer movement does not change the price. Times follow the system timezone, shown beside the
 readout. The back button returns to the table; closing and reopening the panel
 starts at the table again.
@@ -108,14 +111,16 @@ and has a manual refresh button. Returning to the table or closing the panel sto
 new chart requests; an already running request can finish. A refresh failure keeps
 the last good chart, while a first-load failure has
 a retry button. History stays in memory, separate from quotes and alert samples;
-it does not change quote polling or alert evaluation.
+it does not change quote polling or alert evaluation. Intervals have separate caches, so a late
+response or failed refresh cannot display another interval's candles.
 
 In the plugin settings panel, choose **Display → Chart → Chart type → Line / Candlestick**.
 Line is the default. The choice is saved with runtime settings and included in
 configuration export/import. Candlesticks use the exchange's real open/high/low/close
 values, with wicks and the configured rise/fall colors; hovering a candle shows its
-OHLC values. CoinGecko's price-only history falls back to a line. High/low labels sit
-above the full-width plot; coverage, basis and update-time rows are omitted.
+OHLC values; without hovering, the OHLC readout summarizes the displayed window.
+CoinGecko's price-only history falls back to a line and its exchange candle interval buttons are
+disabled. High/low labels sit above the full-width line plot; coverage, basis and update-time rows are omitted.
 
 History uses the selected provider, market and exact instrument, with the same
 configured proxy as quotes. It never substitutes another venue's price. The
@@ -123,14 +128,14 @@ additional requests are:
 
 | Provider | History request |
 | --- | --- |
-| Huobi spot | `api.huobi.pro/market/history/kline`, `period=5min`, 300 candles |
-| Huobi perpetual | `api.hbdm.com/linear-swap-ex/market/history/kline`, `period=5min`, 300 candles |
-| Binance spot | `api.binance.com/api/v3/klines`, `interval=5m`, 300 candles |
-| Binance perpetual | `fapi.binance.com/fapi/v1/klines`, `interval=5m`, 300 candles |
-| OKX | `www.okx.com/api/v5/market/candles`, `bar=5m`, 300 candles |
+| Huobi spot | `api.huobi.pro/market/history/kline`, `period=5min/4hour/1day/1week`, 300 candles |
+| Huobi perpetual | `api.hbdm.com/linear-swap-ex/market/history/kline`, `period=5min/4hour/1day/1week`, 300 candles |
+| Binance spot | `api.binance.com/api/v3/klines`, `interval=5m/4h/1d/1w`, 300 candles |
+| Binance perpetual | `fapi.binance.com/fapi/v1/klines`, `interval=5m/4h/1d/1w`, 300 candles |
+| OKX | `www.okx.com/api/v5/market/candles`, `bar=5m/4H/1D/1W`, 300 candles |
 | CoinGecko | `api.coingecko.com/api/v3/coins/<id>/market_chart`, `vs_currency=usd`, `days=1` |
 
-Exchange samples are five-minute candle close values labelled by the interval's
+Exchange samples are candle close values labelled by the selected interval's
 start; the current candle can still change. CoinGecko supplies timestamped prices
 at its available cadence. The line detail shows the source sampling precision;
 new listings and missing history may cover less than 24 hours, and gaps are not
@@ -297,7 +302,8 @@ debounce, the backoff and the size guards are exercised without a live shell.
 The history suites add provider history fixtures, real-timestamp chart math and
 controlled-clock executions of the actual service and panel. They check stale
 preservation, request deduplication, obsolete callbacks, proxy changes, hover
-precision, the 30-second detail cadence and stopping requests after close/back.
+precision, interval switching and cache isolation, longer candle windows, the 30-second
+detail cadence and stopping requests after close/back.
 
 ```sh
 noctalia plugins lint .

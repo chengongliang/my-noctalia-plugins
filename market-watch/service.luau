@@ -710,27 +710,24 @@ end
 
 -- ── On-demand history ───────────────────────────────────────────────────────
 
-local function history_key(id)
-  return "market.history:" .. id
-end
-
-local function publish_history(id, state)
+local function publish_history(key, state)
   history_revision = history_revision + 1
   state.revision = history_revision
-  history_cache[id] = state
-  noctalia.state.set(history_key(id), state)
+  history_cache[key] = state
+  noctalia.state.set(key, state)
 end
 
-local function history_failure(id, code)
-  local previous = history_cache[id] or {}
+local function history_failure(id, timeframe, code)
+  local key = history.state_key(id, timeframe)
+  local previous = history_cache[key] or {}
   local state = copy_map(previous)
   state.id, state.source, state.market_type = id, static.source, static.market_type
-  state.epoch = history_epoch
+  state.epoch, state.timeframe = history_epoch, timeframe
   state.points = previous.points or {}
   state.updated_at = previous.updated_at or 0
-  state.status = #state.points >= 2 and "stale" or (code == "unavailable" and "unavailable" or "error")
+  state.status = #state.points > 0 and "stale" or (code == "unavailable" and "unavailable" or "error")
   state.error_code = code
-  publish_history(id, state)
+  publish_history(key, state)
 end
 
 local function current_history_instrument(id)
@@ -750,8 +747,8 @@ end
 
 local function clear_history()
   history_epoch = math.max(history_epoch + 1, noctalia.nowMs())
-  for id in pairs(history_cache) do
-    noctalia.state.set(history_key(id), nil)
+  for key in pairs(history_cache) do
+    noctalia.state.set(key, nil)
   end
   history_cache = {}
   history_in_flight = {}
@@ -762,26 +759,29 @@ local function prune_history()
   for _, row in ipairs(watch_rows()) do
     watched[row.id] = true
   end
-  for id in pairs(history_cache) do
-    if not watched[id] then
-      history_cache[id] = nil
-      history_in_flight[id] = nil
-      noctalia.state.set(history_key(id), nil)
+  for key, snapshot in pairs(history_cache) do
+    if not watched[snapshot.id] then
+      history_cache[key] = nil
+      history_in_flight[key] = nil
+      noctalia.state.set(key, nil)
     end
   end
 end
 
-local function request_history(id)
+local function request_history(id, timeframe)
+  timeframe = timeframe == nil and "5m" or timeframe
+  if providers.history_interval_ms(timeframe) == nil then return end
   local instrument = current_history_instrument(id)
   if instrument == nil then
     -- Ignore non-watch-list commands; they must not create an unbounded cache.
     return
   end
   if instrument.status == "unresolved" then
-    history_failure(id, "unavailable")
+    history_failure(id, timeframe, "unavailable")
     return
   end
-  if history_in_flight[id] ~= nil then
+  local key = history.state_key(id, timeframe)
+  if history_in_flight[key] ~= nil then
     return
   end
   local count = 0
@@ -789,75 +789,78 @@ local function request_history(id)
     count = count + 1
   end
   if count >= MAX_CONCURRENT_HISTORY then
-    history_failure(id, "busy")
+    history_failure(id, timeframe, "busy")
     return
   end
   local source, market_type = static.source, static.market_type
-  local url = providers.history_url(source, market_type, instrument)
+  local url = providers.history_url(source, market_type, instrument, timeframe)
   if url == "" then
-    history_failure(id, "unavailable")
+    history_failure(id, timeframe, "unavailable")
     return
   end
 
-  local token = { epoch = history_epoch, at = noctalia.nowMs() }
-  history_in_flight[id] = token
+  local token = { epoch = history_epoch, at = noctalia.nowMs(), id = id, timeframe = timeframe }
+  history_in_flight[key] = token
   local function finish(ok, body, reason)
-    if history_in_flight[id] ~= token or token.epoch ~= history_epoch then
+    if history_in_flight[key] ~= token or token.epoch ~= history_epoch then
       return
     end
     -- Release before decode/publication: a callback budget error must not strand a slot.
-    history_in_flight[id] = nil
+    history_in_flight[key] = nil
     local handled, failure = pcall(function()
       if current_history_instrument(id) == nil then
-        history_cache[id] = nil
-        noctalia.state.set(history_key(id), nil)
+        history_cache[key] = nil
+        noctalia.state.set(key, nil)
         return
       end
       if not ok then
-        history_failure(id, "network-error")
-        noctalia.log("market-watch: history failed " .. id .. " " .. tostring(reason))
+        history_failure(id, timeframe, "network-error")
+        noctalia.log("market-watch: history failed " .. id .. " " .. timeframe .. " " .. tostring(reason))
         return
       end
       local decoded = decode_body(body)
       if decoded == nil then
-        history_failure(id, "parse-error")
+        history_failure(id, timeframe, "parse-error")
         return
       end
-      local parsed = providers.parse_history(source, decoded, instrument)
+      local parsed = providers.parse_history(source, decoded, instrument, timeframe)
       if parsed == nil then
-        history_failure(id, "invalid-response")
+        history_failure(id, timeframe, "invalid-response")
         return
       end
       local now = noctalia.nowMs()
-      local prepared = history.prepare(parsed.points, now, parsed.interval_ms)
-      if #prepared.points < 2 then
-        history_failure(id, "no-data")
+      local window_ms = timeframe == "5m" and 86400000 or parsed.interval_ms * 300
+      local prepared = history.prepare(parsed.points, now, parsed.interval_ms, nil, window_ms)
+      if #prepared.points == 0 or (#prepared.points == 1 and prepared.points[1].open == nil) then
+        history_failure(id, timeframe, "no-data")
         return
       end
-      publish_history(id, {
+      publish_history(key, {
         id = id, source = source, market_type = market_type, epoch = token.epoch,
+        timeframe = timeframe, window_ms = window_ms,
         status = "ready", points = prepared.points, interval_ms = parsed.interval_ms,
         basis = parsed.basis, first_at = prepared.first_at, last_at = prepared.last_at,
         updated_at = now, error_code = "",
       })
     end)
     if not handled then
-      pcall(history_failure, id, "interrupted")
+      pcall(history_failure, id, timeframe, "interrupted")
       noctalia.log("market-watch: history handling interrupted " .. id .. ": " .. tostring(failure))
     end
   end
 
   local started, start_failure = pcall(function()
-    local loading = copy_map(history_cache[id] or {})
+    local loading = copy_map(history_cache[key] or {})
     loading.id, loading.source, loading.market_type = id, source, market_type
+    loading.timeframe = timeframe
     loading.epoch, loading.status, loading.error_code = token.epoch, "loading", ""
     loading.points, loading.updated_at = loading.points or {}, loading.updated_at or 0
-    publish_history(id, loading)
+    publish_history(key, loading)
     api_get(url, MAX_DECODE_BYTES, finish)
   end)
-  if not started and history_in_flight[id] == token then
-    history_in_flight[id] = nil
-    pcall(history_failure, id, "interrupted")
+  if not started and history_in_flight[key] == token then
+    history_in_flight[key] = nil
+    pcall(history_failure, id, timeframe, "interrupted")
     noctalia.log("market-watch: history request interrupted " .. id .. ": " .. tostring(start_failure))
   end
 end
@@ -2213,7 +2216,7 @@ local function handle_command(command)
 
   local op = command.op
   if op == "history_request" then
-    request_history(command.id)
+    request_history(command.id, command.timeframe)
   elseif op == "refresh" then
     fetch_quote(command.id, false)
     publish()
@@ -2462,10 +2465,10 @@ end
 function update()
   local now = noctalia.nowMs()
 
-  for id, token in pairs(history_in_flight) do
+  for key, token in pairs(history_in_flight) do
     if now - token.at >= IN_FLIGHT_TIMEOUT_MS then
-      history_in_flight[id] = nil
-      history_failure(id, "timeout")
+      history_in_flight[key] = nil
+      history_failure(token.id, token.timeframe, "timeout")
     end
   end
 
@@ -2593,7 +2596,9 @@ load_tv_logo_ids()
 -- state can outlive a hot-reloaded service VM; invalidate its previous transient curves.
 for _, row in ipairs(noctalia.state.get("market.watch") or {}) do
   if type(row.id) == "string" then
-    noctalia.state.set(history_key(row.id), nil)
+    for _, timeframe in ipairs(providers.HISTORY_TIMEFRAMES) do
+      noctalia.state.set(history.state_key(row.id, timeframe), nil)
+    end
   end
 end
 -- Resolve whatever the stored list still describes as a bare symbol (the built-in

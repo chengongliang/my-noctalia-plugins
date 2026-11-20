@@ -323,32 +323,48 @@ function Providers.parse_error(provider, response)
   return false
 end
 
--- ── Intraday history ────────────────────────────────────────────────────────
+-- ── Price history ───────────────────────────────────────────────────────────
 
-function Providers.history_url(provider, market_type, instrument)
+Providers.HISTORY_TIMEFRAMES = { "5m", "4h", "1d", "1w" }
+local history_intervals = {
+  ["5m"] = { ms = 300000, huobi = "5min", okx = "5m" },
+  ["4h"] = { ms = 14400000, huobi = "4hour", okx = "4H" },
+  ["1d"] = { ms = 86400000, huobi = "1day", okx = "1D" },
+  ["1w"] = { ms = 604800000, huobi = "1week", okx = "1W" },
+}
+
+function Providers.history_interval_ms(timeframe)
+  local interval = history_intervals[timeframe == nil and "5m" or timeframe]
+  return interval and interval.ms or nil
+end
+
+function Providers.history_url(provider, market_type, instrument, timeframe)
   if instrument == nil or type(instrument.exchange_symbol) ~= "string" or instrument.exchange_symbol == "" then
     return ""
   end
+  timeframe = timeframe == nil and "5m" or timeframe
+  local interval = history_intervals[timeframe]
+  if interval == nil then return "" end
   local symbol = url_encode(instrument.exchange_symbol)
   if provider == "huobi" then
     if market_type == "perpetual" then
-      return "https://api.hbdm.com/linear-swap-ex/market/history/kline?period=5min&size=300&contract_code=" .. symbol
+      return "https://api.hbdm.com/linear-swap-ex/market/history/kline?period=" .. interval.huobi .. "&size=300&contract_code=" .. symbol
     end
-    return "https://api.huobi.pro/market/history/kline?period=5min&size=300&symbol=" .. symbol
+    return "https://api.huobi.pro/market/history/kline?period=" .. interval.huobi .. "&size=300&symbol=" .. symbol
   elseif provider == "binance" then
     local base = market_type == "perpetual" and "https://fapi.binance.com/fapi/v1/klines"
       or "https://api.binance.com/api/v3/klines"
-    return base .. "?symbol=" .. symbol .. "&interval=5m&limit=300"
+    return base .. "?symbol=" .. symbol .. "&interval=" .. timeframe .. "&limit=300"
   elseif provider == "okx" then
-    return "https://www.okx.com/api/v5/market/candles?instId=" .. symbol .. "&bar=5m&limit=300"
-  elseif provider == "coingecko" and market_type == "spot" then
+    return "https://www.okx.com/api/v5/market/candles?instId=" .. symbol .. "&bar=" .. interval.okx .. "&limit=300"
+  elseif provider == "coingecko" and market_type == "spot" and timeframe == "5m" then
     -- Explicit interval=5m requires Enterprise; a current one-day query picks it automatically.
     return "https://api.coingecko.com/api/v3/coins/" .. symbol .. "/market_chart?vs_currency=usd&days=1"
   end
   return ""
 end
 
-function Providers.parse_history(provider, response, _instrument)
+function Providers.parse_history(provider, response, _instrument, timeframe)
   if type(response) ~= "table" or Providers.parse_error(provider, response) then
     return nil
   end
@@ -408,7 +424,8 @@ function Providers.parse_history(provider, response, _instrument)
     return a.timestamp_ms < b.timestamp_ms
   end)
 
-  local interval = 300000
+  local interval = Providers.history_interval_ms(timeframe)
+  if interval == nil then return nil end
   if provider == "coingecko" and #points > 1 then
     local deltas = {}
     for index = 2, #points do

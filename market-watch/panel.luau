@@ -58,6 +58,7 @@ local dark_mode = true
 local rendered_signature = nil
 local opened = false
 local selected_id = nil
+local selected_timeframe = "5m"
 local selected_source = nil
 local selected_market = nil
 local selected_proxy = nil
@@ -227,6 +228,7 @@ local function display_signature()
     tostring(config and config.red_rises),
     tostring(config and config.chart_type),
     tostring(selected_id),
+    selected_timeframe,
     tostring(history_snapshot and history_snapshot.epoch),
     tostring(history_snapshot and history_snapshot.revision),
     tostring(history_snapshot and history_snapshot.status),
@@ -239,7 +241,7 @@ local function display_signature()
   if selected_id ~= nil then
     for _, row in ipairs(watch) do
       if row.id == selected_id then
-        parts[#parts + 1] = tostring(row.symbol) .. "\30" .. tostring(row.name)
+        parts[#parts + 1] = tostring(row.symbol) .. "\30" .. tostring(row.name) .. "\30" .. tostring(logos[selected_id])
         break
       end
     end
@@ -274,7 +276,11 @@ local function selected_row()
 end
 
 local function local_time(timestamp_ms, pattern)
-  return noctalia.formatTime(pattern or "%m-%d %H:%M %Z", math.floor(timestamp_ms / 1000))
+  return noctalia.formatTime(pattern or (selected_timeframe == "5m" and "%m-%d %H:%M %Z" or "%Y-%m-%d %H:%M %Z"), math.floor(timestamp_ms / 1000))
+end
+
+local function chart_id()
+  return selected_id .. (selected_timeframe == "5m" and "" or "-" .. selected_timeframe)
 end
 
 local function detail_message()
@@ -304,6 +310,7 @@ local function candle_plot()
   local span = prepared.window_end - prepared.window_start
   local cursor, group_start, group_end = prepared.window_start, nil, nil
   local range = prepared.high - prepared.low
+  local body_w = #prepared.points <= 60 and 4 or (#prepared.points <= 120 and 3 or 2)
   local function add_part(children, weight, width, color)
     if weight <= 0 then return end
     if color ~= nil then
@@ -332,22 +339,22 @@ local function candle_plot()
         add_part(children, prepared.high - point.high, nil, nil)
         add_part(children, point.high - top, 1, color)
         if top > bottom then
-          add_part(children, top - bottom, 2, color)
+          add_part(children, top - bottom, body_w, color)
         else
-          children[#children + 1] = ui.box({ height = 1, width = 2, fill = color })
+          children[#children + 1] = ui.box({ height = 1, width = body_w, fill = color })
         end
         add_part(children, bottom - point.low, 1, color)
         add_part(children, point.low - prepared.low, nil, nil)
       else
         children = {
           ui.spacer({ height = 0, flexGrow = 1 }),
-          ui.box({ height = 1, width = 2, fill = color }),
+          ui.box({ height = 1, width = body_w, fill = color }),
           ui.spacer({ height = 0, flexGrow = 1 }),
         }
       end
       group_start, group_end = group_start or start_at, end_at
       group[#group + 1] = ui.column({
-        key = "history-candle-" .. selected_id .. "-" .. tostring(index), width = 0,
+        key = "history-candle-" .. chart_id() .. "-" .. tostring(index), width = 0,
         flexGrow = end_at - start_at, gap = 0, align = "center", onHover = "onCandleHover",
       }, children)
       -- The host accepts at most 256 direct children; a full day has ~288 candles.
@@ -374,9 +381,27 @@ end
 local function chart_body()
   local point = hover_point or prepared.points[#prepared.points]
   local currency = string.upper(providers.quote_currency(config.source))
-  local rising = prepared.points[#prepared.points].price >= prepared.points[1].price
-  local color = providers.price_color(rising, config.red_rises, true, dark_mode)
   local interval_minutes = math.floor(prepared.interval_ms / 6000 + 0.5) / 10
+
+  -- Price, change and rise/fall metrics
+  local ref_open = hover_point and (hover_point.open or hover_point.price)
+    or (prepared.points[1] and (prepared.points[1].open or prepared.points[1].price) or point.price)
+  local curr_close = hover_point and (hover_point.close or hover_point.price)
+    or (prepared.points[#prepared.points] and (prepared.points[#prepared.points].close or prepared.points[#prepared.points].price) or point.price)
+  local is_rising = curr_close >= ref_open
+  local color = providers.price_color(is_rising, config.red_rises, true, dark_mode)
+
+  local change_amt = curr_close - ref_open
+  local change_pct = ref_open > 0 and (change_amt / ref_open * 100) or 0
+  local sign = change_amt >= 0 and "+" or ""
+  local change_badge_text = sign .. providers.to_string(change_amt) .. " (" .. sign .. string.format("%.2f", change_pct) .. "%)"
+  local badge_bg = is_rising and (dark_mode and "#39c38c26" or "#0a5c391a")
+    or (dark_mode and "#ff704b26" or "#9c23181a")
+  if config ~= nil and config.red_rises == true then
+    badge_bg = is_rising and (dark_mode and "#ff704b26" or "#9c23181a")
+      or (dark_mode and "#39c38c26" or "#0a5c391a")
+  end
+
   local pieces = {}
   local cursor = prepared.window_start
   local span = prepared.window_end - prepared.window_start
@@ -386,9 +411,9 @@ local function chart_body()
     end
     if #segment.points >= 2 then
       if pointer_handlers[index] == nil then
-        local target_id = selected_id
+        local target_id, target_chart = selected_id, prepared
         pointer_handlers[index] = function(x, _y)
-          if not opened or selected_id ~= target_id then return end
+          if not opened or selected_id ~= target_id or prepared ~= target_chart then return end
           local next_point = history.price_at(segment, x)
           if next_point ~= nil and (hover_point == nil
             or next_point.timestamp_ms ~= hover_point.timestamp_ms or next_point.price ~= hover_point.price) then
@@ -398,13 +423,13 @@ local function chart_body()
         end
       end
       table.insert(pieces, ui.graph({
-        key = "history-" .. selected_id .. "-" .. tostring(index),
+        key = "history-" .. chart_id() .. "-" .. tostring(index),
         width = 0,
         flexGrow = (segment.end_at - segment.start_at) / span,
         values = history.graph_values(segment),
         color = color,
         lineWidth = 2,
-        fillOpacity = 0.1,
+        fillOpacity = 0.15,
         onPointerMove = pointer_handlers[index],
         onPointerLeave = "onHistoryPointerLeave",
       }))
@@ -419,39 +444,99 @@ local function chart_body()
   local detail = noctalia.tr("history.interval", { minutes = string.format("%g", interval_minutes) })
     .. " · " .. noctalia.formatTime("%Z %z") .. " · " .. currency
   if prepared.chart_type == "candle" then
+    local open_val = hover_point and hover_point.open or (prepared.points[1] and (prepared.points[1].open or prepared.points[1].price))
+    local high_val = hover_point and hover_point.high or prepared.high
+    local low_val = hover_point and hover_point.low or prepared.low
+    local close_val = hover_point and hover_point.close or (prepared.points[#prepared.points] and (prepared.points[#prepared.points].close or prepared.points[#prepared.points].price))
     detail = noctalia.tr("history.ohlc", {
-      open = providers.to_string(point.open), high = providers.to_string(point.high),
-      low = providers.to_string(point.low), close = providers.to_string(point.close),
+      open = providers.to_string(open_val),
+      high = providers.to_string(high_val),
+      low = providers.to_string(low_val),
+      close = providers.to_string(close_val),
     })
   elseif config.chart_type == "candle" then
     detail = noctalia.tr("history.line_fallback") .. " · " .. detail
   end
 
-  return {
-    ui.label({
-      key = "history-readout",
-      text = noctalia.tr("history.sample", {
-        time = local_time(point.timestamp_ms), price = providers.to_string(point.price), currency = currency,
+  local nodes = {
+    -- 1. TradingView-style price header: large rise/fall colored price + change badge
+    ui.row({ align = "center", justify = "space_between", gap = 8 }, {
+      ui.label({
+        key = "history-readout",
+        text = noctalia.tr("history.sample", {
+          time = local_time(point.timestamp_ms), price = providers.to_string(point.price), currency = currency,
+        }),
+        fontSize = 18, fontWeight = "bold", color = color, maxLines = 1, baseline = "textFixedHeight",
       }),
-      fontSize = 16, fontWeight = "medium", color = "on_surface", maxLines = 1, baseline = "textFixedHeight",
+      ui.box({
+        paddingHorizontal = 8, paddingVertical = 2, radius = 4, fill = badge_bg,
+      }, {
+        ui.label({
+          text = change_badge_text,
+          fontSize = 12, fontWeight = "bold", color = color, maxLines = 1, baseline = "textFixedHeight",
+        }),
+      }),
     }),
-    ui.label({
-      text = detail,
-      fontSize = 11, color = "on_surface_variant", maxLines = 1, baseline = "textFixedHeight",
-    }),
-    ui.row({ key = "history-bounds", justify = "space_between", gap = 8 }, {
-      ui.label({ text = noctalia.tr("history.high", { price = providers.to_string(prepared.high) }), fontSize = 11, color = "on_surface_variant" }),
-      ui.label({ text = noctalia.tr("history.low", { price = providers.to_string(prepared.low) }), fontSize = 11, color = "on_surface_variant" }),
-    }),
-    ui.row({ key = "history-plot", flexGrow = 1, minHeight = 100, gap = 0, align = "stretch" }, pieces),
-    ui.row({ justify = "space_between", gap = 8 }, {
-        ui.label({ text = local_time(prepared.window_start), fontSize = 11, color = "on_surface_variant" }),
-        ui.label({ text = local_time(prepared.window_end), fontSize = 11, color = "on_surface_variant" }),
+
+    -- 2. TradingView-style HUD legend bar (OHLC or interval)
+    ui.row({
+      fill = "surface_variant/0.25", radius = 6, paddingHorizontal = 8, paddingVertical = 4,
+      align = "center", justify = "space_between", gap = 8,
+    }, {
+      ui.label({
+        text = detail,
+        fontSize = 11, fontWeight = "medium", color = "on_surface_variant", maxLines = 1, baseline = "textFixedHeight",
+      }),
+      ui.label({
+        text = hover_point ~= nil and local_time(point.timestamp_ms, selected_timeframe == "5m" and "%H:%M" or "%Y-%m-%d %H:%M")
+          or (prepared.chart_type == "candle" and noctalia.tr(selected_timeframe == "5m" and "history.day_window" or "history.timeframes." .. selected_timeframe)
+            or noctalia.tr("chart.line")),
+        fontSize = 10, fontWeight = "bold", color = "primary", baseline = "textFixedHeight",
+      }),
     }),
   }
+
+  -- 3. High / Low chart bounds right above the plot (only needed for line charts; in candle mode the HUD already shows high/low)
+  if prepared.chart_type ~= "candle" then
+    table.insert(nodes, ui.row({ key = "history-bounds", justify = "space_between", align = "center", paddingHorizontal = 4 }, {
+      ui.label({ text = noctalia.tr("history.high", { price = providers.to_string(prepared.high) }), fontSize = 11, fontWeight = "medium", color = "on_surface_variant" }),
+      ui.label({ text = noctalia.tr("history.low", { price = providers.to_string(prepared.low) }), fontSize = 11, fontWeight = "medium", color = "on_surface_variant" }),
+    }))
+  end
+
+  -- 4. Chart canvas card with subtle container styling
+  table.insert(nodes, ui.row({
+    key = "history-plot", flexGrow = 1, minHeight = 110, gap = 0, align = "stretch",
+    fill = "surface_variant/0.12", radius = 6, paddingHorizontal = 2, paddingVertical = 2,
+  }, pieces))
+
+  -- 5. Time axis
+  table.insert(nodes, ui.row({ justify = "space_between", paddingHorizontal = 4, gap = 8 }, {
+    ui.label({ text = local_time(prepared.window_start), fontSize = 11, color = "on_surface_variant" }),
+    ui.label({ text = local_time(prepared.window_end), fontSize = 11, color = "on_surface_variant" }),
+  }))
+
+  return nodes
 end
 
 local function detail_body(body)
+  local buttons = {
+    ui.label({ text = noctalia.tr("history.timeframe"), fontSize = 11, color = "on_surface_variant" }),
+  }
+  for _, timeframe in ipairs(providers.HISTORY_TIMEFRAMES) do
+    local enabled = timeframe == "5m" or config.source ~= "coingecko"
+    table.insert(buttons, ui.button({
+      key = "history-timeframe-" .. timeframe,
+      text = noctalia.tr("history.timeframes." .. timeframe),
+      height = 24,
+      fontSize = 11,
+      variant = timeframe == selected_timeframe and "secondary" or "ghost",
+      enabled = enabled,
+      tooltip = not enabled and noctalia.tr("history.timeframe_unavailable") or nil,
+      onClick = function() onHistoryTimeframeChanged(timeframe) end,
+    }))
+  end
+  table.insert(body, ui.row({ key = "history-timeframes", align = "center", gap = 4 }, buttons))
   local drawable = prepared ~= nil and prepared.chart_type == "candle" and #prepared.points > 0
   for _, segment in ipairs(prepared and prepared.segments or {}) do
     if #segment.points >= 2 then drawable = true; break end
@@ -484,17 +569,31 @@ render = function()
   end
   local row = selected_row()
 
+  local asset_logo = selected_id ~= nil and logos[selected_id]
+  local leading_icon = (asset_logo ~= nil and asset_logo ~= "")
+    and ui.image({ path = asset_logo, width = 20, height = 20, radius = 10, fit = "contain" })
+    or ui.glyph({ name = "chart-line", size = 18, color = "primary" })
+
+  local subtitle_text
+  if selected_id ~= nil then
+    local src = noctalia.tr("data_source." .. tostring(config ~= nil and config.source or "huobi"))
+    local mkt = config ~= nil and config.market_type == "perpetual" and noctalia.tr("market_type.perpetual") or noctalia.tr("market_type.spot")
+    subtitle_text = src .. " · " .. mkt .. " · " .. noctalia.tr("history.title")
+  else
+    subtitle_text = noctalia.tr("panel.refresh")
+      .. ": "
+      .. tostring(config ~= nil and config.refresh_interval or 5)
+      .. " "
+      .. noctalia.tr("settings.seconds")
+  end
+
   local body = {
     ui.row({ align = "center", gap = 8, key = "header" }, {
-      ui.glyph({ name = "chart-line", size = 18, color = "primary" }),
+      leading_icon,
       ui.column({ flexGrow = 1, gap = 2 }, {
         ui.label({ text = row and name_for(row) or noctalia.tr("panel.title"), fontSize = 16, fontWeight = "bold", color = "on_surface", maxLines = 1 }),
         ui.label({
-          text = selected_id ~= nil and noctalia.tr("history.title") or (noctalia.tr("panel.refresh")
-            .. ": "
-            .. tostring(config ~= nil and config.refresh_interval or 5)
-            .. " "
-            .. noctalia.tr("settings.seconds")),
+          text = subtitle_text,
           fontSize = 11,
           color = "on_surface_variant",
         }),
@@ -613,9 +712,10 @@ local function clear_detail()
 end
 
 local function poll_history()
-  local snapshot = noctalia.state.get("market.history:" .. selected_id)
+  local snapshot = noctalia.state.get(history.state_key(selected_id, selected_timeframe))
   if snapshot ~= nil and (snapshot.id ~= selected_id or snapshot.source ~= selected_source
-    or snapshot.market_type ~= selected_market or snapshot.epoch ~= config.history_epoch) then
+    or snapshot.market_type ~= selected_market or snapshot.epoch ~= config.history_epoch
+    or (snapshot.timeframe or "5m") ~= selected_timeframe) then
     snapshot = nil
   end
   history_snapshot = snapshot
@@ -625,11 +725,11 @@ local function poll_history()
   end
   local signature = snapshot ~= nil and table.concat({
     tostring(snapshot.epoch), tostring(snapshot.revision), tostring(snapshot.updated_at),
-    tostring(config.chart_type),
+    tostring(config.chart_type), selected_timeframe,
   }, ":") or ""
   if signature ~= prepared_signature then
     prepared_signature = signature
-    prepared = snapshot ~= nil and history.prepare(snapshot.points or {}, snapshot.updated_at or noctalia.nowMs(), snapshot.interval_ms, config.chart_type) or nil
+    prepared = snapshot ~= nil and history.prepare(snapshot.points or {}, snapshot.updated_at or noctalia.nowMs(), snapshot.interval_ms, config.chart_type, snapshot.window_ms) or nil
     pointer_handlers, hover_point = {}, nil
     hover_candle_key = nil
   end
@@ -643,7 +743,7 @@ local function request_history()
   pending_since = now
   pending_revision = tostring(history_snapshot and history_snapshot.revision)
   next_history_at = now + HISTORY_REFRESH_MS
-  send({ op = "history_request", id = selected_id })
+  send({ op = "history_request", id = selected_id, timeframe = selected_timeframe })
 end
 
 select_asset = function(id)
@@ -652,6 +752,7 @@ select_asset = function(id)
   clear_detail()
   selected_id = id
   if selected_row() == nil or config == nil then clear_detail(); return end
+  if config.source == "coingecko" then selected_timeframe = "5m" end
   selected_source, selected_market, selected_proxy = config.source, config.market_type, config.proxy_url
   selected_epoch = config.history_epoch
   poll_history()
@@ -696,6 +797,24 @@ function onRefreshClicked()
   send({ op = "refresh_all" })
 end
 
+function onHistoryTimeframeChanged(timeframe)
+  if not opened or selected_id == nil or timeframe == selected_timeframe
+    or providers.history_interval_ms(timeframe) == nil then return end
+  poll_state()
+  if config == nil or config.source ~= selected_source or config.market_type ~= selected_market or selected_row() == nil then
+    clear_detail()
+    render()
+    return
+  end
+  if config.source == "coingecko" and timeframe ~= "5m" then return end
+  selected_timeframe = timeframe
+  pending_since, pending_revision, next_history_at = nil, nil, 0
+  prepared_signature = nil
+  poll_history()
+  request_history()
+  render()
+end
+
 function onSettingsClicked()
   noctalia.togglePanel(PANEL_SETTINGS)
 end
@@ -708,6 +827,7 @@ end
 function onOpen(_context)
   opened = true
   clear_detail()
+  selected_timeframe = "5m"
   -- Read on every open: it does not reload when the shell setting changes.
   -- Only an explicit false hides the button (the host's own convention).
   show_close_button = noctalia.getSetting("shell.show_close_buttons") ~= false
@@ -738,7 +858,7 @@ function onCandleHover(state, key)
   if not opened or selected_id == nil or prepared == nil or prepared.chart_type ~= "candle" then return end
   if state == "true" then
     local index = tonumber(key:match("%-(%d+)$"))
-    if index == nil or key ~= "history-candle-" .. selected_id .. "-" .. tostring(index) then return end
+    if index == nil or key ~= "history-candle-" .. chart_id() .. "-" .. tostring(index) then return end
     if prepared.points[index] == nil or hover_candle_key == key then return end
     hover_candle_key, hover_point = key, prepared.points[index]
   elseif key == hover_candle_key then

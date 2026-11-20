@@ -37,6 +37,44 @@ check(providers.history_url("coingecko", "spot", { exchange_symbol = "bitcoin" }
   "CoinGecko automatic granularity avoids Enterprise interval")
 check(providers.history_url("coingecko", "perpetual", { exchange_symbol = "bitcoin" }) == "", "no fabricated CG perpetual")
 check(providers.history_url("huobi", "spot", nil) == "", "missing instrument")
+local timeframes = {
+  { "4h", 14400000, "4hour", "4H" },
+  { "1d", 86400000, "1day", "1D" },
+  { "1w", 604800000, "1week", "1W" },
+}
+for _, timeframe in ipairs(timeframes) do
+  for _, case in ipairs(pairs_to_check) do
+    local url = providers.history_url(case[1], case[2], { exchange_symbol = case[3] }, timeframe[1])
+    if case[1] == "coingecko" then
+      check(url == "", "CoinGecko does not claim exchange candle intervals")
+    else
+      local param = case[1] == "huobi" and "period=" .. timeframe[3]
+        or (case[1] == "okx" and "bar=" .. timeframe[4] or "interval=" .. timeframe[1])
+      check(url:find(case[4], 1, true) and url:find(param, 1, true), case[1] .. " " .. case[2] .. " " .. timeframe[1] .. " uses real candle interval")
+      local parsed = providers.parse_history(case[1], fixtures[case[1]], nil, timeframe[1])
+      check(parsed.interval_ms == timeframe[2] and parsed.points[1].open == 99, "interval parsing preserves real OHLC")
+    end
+  end
+  local window = timeframe[2] * 300
+  local chart = history.prepare({
+    { timestamp_ms = now - window - 1, price = 1 },
+    { timestamp_ms = now - window, price = 100, open = 99, high = 102, low = 98, close = 100 },
+    { timestamp_ms = now - timeframe[2], price = 101, open = 100, high = 105, low = 97, close = 101 },
+    { timestamp_ms = now + 1, price = 200 },
+  }, now, timeframe[2], "candle", window)
+  check(#chart.points == 2 and chart.first_at == now - window and chart.window_start == now - window,
+    timeframe[1] .. " retains older candles and enforces its actual lookback")
+  check(chart.low == 97 and chart.high == 105, "long-period OHLC controls chart bounds")
+end
+for _, invalid in ipairs({ "1h", true, false, {}, 4 }) do
+  check(providers.history_url("huobi", "spot", { exchange_symbol = "btcusdt" }, invalid) == "",
+    "unsupported interval cannot reach provider URL")
+  check(providers.history_interval_ms(invalid) == nil, "invalid interval rejected")
+end
+check(history.state_key("btc") == "market.history:btc" and history.state_key("btc", "5m") == "market.history:btc",
+  "intraday state key remains compatible")
+check(history.state_key("btc", "4h") == "market.history:btc:4h" and history.state_key("btc", "1w") ~= history.state_key("btc", "1d"),
+  "timeframes have separate state keys")
 check(providers.parse_history("huobi", { status = "error", data = {} }) == nil, "HTX error rejected")
 check(providers.parse_history("binance", { code = -1003 }) == nil, "Binance rate limit rejected")
 check(providers.parse_history("okx", { code = "50011", data = {} }) == nil, "OKX error rejected")
